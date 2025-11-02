@@ -1,291 +1,545 @@
-const socket = io();
-
+let socket;
 let competitionId = null;
 let participantName = null;
-let currentRound = -1;
-let isTestInProgress = false;
-let testStartTime = 0;
-let typingText = '';
-let currentRoundDuration = 0;
+let currentRound = null;
+let roundText = '';
+let roundDuration = 0;
+let startTime = null;
+let timerInterval = null;
+let isPaused = false;
 
-let totalErrors = 0;
-let backspaceCount = 0;
-let typedChars = [];
-let errorIndices = new Set();
+// Statistics
+let correctChars = 0;
+let totalChars = 0;
+let currentCharIndex = 0;
 
 // DOM Elements
-const joinScreen = document.getElementById('joinScreen');
-const lobbyScreen = document.getElementById('lobbyScreen');
-const testScreen = document.getElementById('testScreen');
-const resultsScreen = document.getElementById('resultsScreen');
-const finalScreen = document.getElementById('finalScreen');
+const joinSection = document.getElementById('join-section');
+const codeInput = document.getElementById('code-input');
+const nameInput = document.getElementById('name-input');
+const joinBtn = document.getElementById('join-btn');
 
-const competitionCodeInput = document.getElementById('competitionCode');
-const participantNameInput = document.getElementById('participantName');
-const joinBtn = document.getElementById('joinBtn');
-const joinError = document.getElementById('joinError');
+const waitingSection = document.getElementById('waiting-section');
+const waitingMessage = document.getElementById('waiting-message');
+const participantCount = document.getElementById('participant-count');
 
-const welcomeName = document.getElementById('welcomeName');
-const competitionNameDisplay = document.getElementById('competitionName');
-const participantCountDisplay = document.getElementById('participantCountDisplay');
+const typingSection = document.getElementById('typing-section');
+const roundInfo = document.getElementById('round-info');
+const timerDisplay = document.getElementById('timer');
+const typingTextDisplay = document.getElementById('typing-text');
+const typingInput = document.getElementById('typing-input');
+const wpmDisplay = document.getElementById('wpm');
+const accuracyDisplay = document.getElementById('accuracy');
 
-const typingInput = document.getElementById('typingInput');
-const textDisplay = document.getElementById('textDisplay');
-const wpmDisplay = document.getElementById('wpmDisplay');
-const accuracyDisplay = document.getElementById('accuracyDisplay');
-const timerDisplay = document.getElementById('timerDisplay');
-const focusWarning = document.getElementById('focusWarning');
+const resultsSection = document.getElementById('results-section');
+const resultsTitle = document.getElementById('results-title');
+const leaderboardBody = document.getElementById('leaderboard-body');
+const nextRoundBtn = document.getElementById('next-round-btn');
 
-// ============= ANTI-CHEATING =============
-document.addEventListener('contextmenu', (e) => e.preventDefault());
-document.addEventListener('paste', (e) => e.preventDefault());
-document.addEventListener('cut', (e) => e.preventDefault());
-document.addEventListener('copy', (e) => e.preventDefault());
+const reconnectingOverlay = document.getElementById('reconnecting-overlay');
 
-// Focus monitoring
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && isTestInProgress) {
-    focusWarning.classList.remove('hidden');
-  } else if (!document.hidden) {
-    focusWarning.classList.add('hidden');
+// ==========================
+// RECONNECTION HANDLING (P0 - CRITICAL)
+// ==========================
+
+function saveStateToLocalStorage() {
+  if (competitionId && participantName) {
+    const state = {
+      code: codeInput.value,
+      name: participantName,
+      competitionId: competitionId,
+      currentCharIndex: currentCharIndex,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('typingCompState', JSON.stringify(state));
   }
-});
+}
 
-// ============= JOIN COMPETITION =============
-joinBtn.addEventListener('click', () => {
-  const code = competitionCodeInput.value.toUpperCase().trim();
-  const name = participantNameInput.value.trim();
-
-  if (!code || code.length !== 5) {
-    showError('Competition code must be 5 characters');
-    return;
-  }
-
-  if (!name || name.length === 0) {
-    showError('Please enter your name');
-    return;
-  }
-
-  participantName = name;
-  socket.emit('join', { code, participantName: name });
-});
-
-// ============= TYPING INPUT HANDLER =============
-typingInput.addEventListener('keydown', (e) => {
-  if (!isTestInProgress) return;
-
-  // Backspace handling
-  if (e.key === 'Backspace') {
-    e.preventDefault();
-    if (typedChars.length > 0) {
-      const removedIndex = typedChars.length - 1;
-      if (errorIndices.has(removedIndex)) {
-        errorIndices.delete(removedIndex);
-        totalErrors = Math.max(0, totalErrors - 1);
+function restorePreviousSession() {
+  const savedState = localStorage.getItem('typingCompState');
+  
+  if (savedState) {
+    try {
+      const state = JSON.parse(savedState);
+      
+      if (Date.now() - state.timestamp < 30 * 60 * 1000) {
+        codeInput.value = state.code || '';
+        nameInput.value = state.name || '';
+        
+        showNotification('Attempting to reconnect to previous session...', 'info');
+        
+        setTimeout(() => {
+          if (state.code && state.name) {
+            connectSocket();
+            rejoinCompetition(state.code, state.name, state.currentCharIndex);
+          }
+        }, 1000);
+      } else {
+        localStorage.removeItem('typingCompState');
       }
-      backspaceCount++;
-      typedChars.pop();
-      typingInput.value = typedChars.join('');
-      updateTypingStats();
+    } catch (e) {
+      console.error('Failed to parse saved state:', e);
+      localStorage.removeItem('typingCompState');
     }
+  }
+}
+
+function connectSocket() {
+  if (socket && socket.connected) {
     return;
   }
 
-  // Printable character
-  if (e.key.length === 1) {
-    e.preventDefault();
-    const nextIndex = typedChars.length;
-    const expectedChar = typingText[nextIndex] || '';
+  socket = io({
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity,
+    timeout: 20000
+  });
 
-    typedChars.push(e.key);
-    typingInput.value = typedChars.join('');
-
-    if (e.key !== expectedChar) {
-      totalErrors++;
-      errorIndices.add(nextIndex);
+  socket.on('connect', () => {
+    console.log('Socket connected:', socket.id);
+    hideReconnectingOverlay();
+    
+    if (socket.recovered) {
+      console.log('Connection recovered automatically');
+      showNotification('Reconnected successfully!', 'success');
     }
+  });
 
-    updateTypingStats();
+  socket.on('disconnect', (reason) => {
+    console.log('Socket disconnected:', reason);
+    showReconnectingOverlay();
+    saveStateToLocalStorage();
+    
+    if (reason === 'io server disconnect') {
+      socket.connect();
+    }
+  });
+
+  socket.io.on('reconnect_attempt', (attemptNumber) => {
+    console.log('Reconnection attempt:', attemptNumber);
+    showReconnectingOverlay(`Reconnecting... (attempt ${attemptNumber})`);
+  });
+
+  socket.io.on('reconnect', (attemptNumber) => {
+    console.log('Reconnected after', attemptNumber, 'attempts');
+    hideReconnectingOverlay();
+    showNotification('Reconnected successfully!', 'success');
+    
+    if (competitionId && participantName) {
+      const code = codeInput.value;
+      rejoinCompetition(code, participantName, currentCharIndex);
+    }
+  });
+
+  socket.io.on('reconnect_failed', () => {
+    console.error('Reconnection failed');
+    showNotification('Failed to reconnect. Please refresh the page.', 'error');
+  });
+
+  setupSocketListeners();
+}
+
+function rejoinCompetition(code, name, charIndex) {
+  socket.emit('rejoin', {
+    code: code,
+    name: name,
+    currentChar: charIndex,
+    elapsedTime: startTime ? Date.now() - startTime : 0
+  });
+}
+
+function setupSocketListeners() {
+  socket.on('joinSuccess', ({ competitionId: compId, name, roundCount, currentRound: round, isPaused: paused }) => {
+    competitionId = compId;
+    participantName = name;
+    currentRound = 0;
+    isPaused = paused;
+    
+    saveStateToLocalStorage();
+    
+    joinSection.style.display = 'none';
+    waitingSection.style.display = 'flex';
+    waitingMessage.textContent = isPaused ? 
+      'Round is paused. Waiting for organizer...' : 
+      'Waiting for organizer to start the competition...';
+    
+    showNotification(`Joined as ${name}!`, 'success');
+  });
+
+  socket.on('rejoinSuccess', ({ competitionId: compId, name, currentRound: round, currentProgress }) => {
+    competitionId = compId;
+    participantName = name;
+    currentRound = round;
+    
+    if (currentProgress) {
+      currentCharIndex = currentProgress.currentChar || 0;
+      correctChars = currentProgress.correctChars || 0;
+      totalChars = currentProgress.totalChars || 0;
+    }
+    
+    showNotification('Successfully rejoined competition!', 'success');
+  });
+
+  socket.on('participantJoined', ({ name, totalParticipants }) => {
+    participantCount.textContent = `${totalParticipants} participant${totalParticipants !== 1 ? 's' : ''} joined`;
+    
+    if (name !== participantName) {
+      showNotification(`${name} joined`, 'info');
+    }
+  });
+
+  socket.on('participantLeft', ({ name, totalParticipants }) => {
+    participantCount.textContent = `${totalParticipants} participant${totalParticipants !== 1 ? 's' : ''} joined`;
+    showNotification(`${name} left`, 'info');
+  });
+
+  socket.on('roundStarted', ({ roundIndex, text, duration, startTime: sTime, elapsedTime }) => {
+    currentRound = roundIndex;
+    roundText = text;
+    roundDuration = duration;
+    
+    if (elapsedTime) {
+      startTime = Date.now() - (elapsedTime * 1000);
+    } else {
+      startTime = sTime || Date.now();
+    }
+    
+    isPaused = false;
+    
+    if (!elapsedTime) {
+      correctChars = 0;
+      totalChars = 0;
+      currentCharIndex = 0;
+    }
+    
+    waitingSection.style.display = 'none';
+    resultsSection.style.display = 'none';
+    typingSection.style.display = 'flex';
+    
+    roundInfo.textContent = `Round ${roundIndex + 1}`;
+    renderTypingText();
+    typingInput.value = '';
+    typingInput.disabled = false;
+    typingInput.focus();
+    
+    updateTimer();
+    timerInterval = setInterval(updateTimer, 100);
+    
+    saveStateToLocalStorage();
+  });
+
+  socket.on('roundPaused', () => {
+    isPaused = true;
+    typingInput.disabled = true;
+    clearInterval(timerInterval);
+    showNotification('Round paused by organizer', 'warning');
+  });
+
+  socket.on('roundResumed', ({ pauseDuration }) => {
+    isPaused = false;
+    startTime += pauseDuration;
+    typingInput.disabled = false;
+    typingInput.focus();
+    
+    timerInterval = setInterval(updateTimer, 100);
+    showNotification('Round resumed', 'success');
+  });
+
+  socket.on('leaderboardUpdate', ({ round, leaderboard }) => {
+    updateLeaderboard(leaderboard, false);
+  });
+
+  socket.on('roundEnded', ({ roundIndex, leaderboard }) => {
+    clearInterval(timerInterval);
+    typingInput.disabled = true;
+    
+    typingSection.style.display = 'none';
+    resultsSection.style.display = 'flex';
+    resultsTitle.textContent = `Round ${roundIndex + 1} Results`;
+    nextRoundBtn.style.display = 'block';
+    
+    updateLeaderboard(leaderboard, true);
+    
+    currentCharIndex = 0;
+    correctChars = 0;
+    totalChars = 0;
+  });
+
+  socket.on('finalResults', ({ rankings }) => {
+    clearInterval(timerInterval);
+    typingInput.disabled = true;
+    
+    typingSection.style.display = 'none';
+    waitingSection.style.display = 'none';
+    resultsSection.style.display = 'flex';
+    resultsTitle.textContent = '🏆 Final Rankings';
+    nextRoundBtn.style.display = 'none';
+    
+    updateFinalRankings(rankings);
+    
+    localStorage.removeItem('typingCompState');
+  });
+
+  socket.on('error', ({ message }) => {
+    showNotification(message, 'error');
+    
+    if (message.includes('not found') || message.includes('ended')) {
+      joinSection.style.display = 'flex';
+      waitingSection.style.display = 'none';
+      typingSection.style.display = 'none';
+      resultsSection.style.display = 'none';
+      
+      localStorage.removeItem('typingCompState');
+    }
+  });
+}
+
+// ==========================
+// UI FUNCTIONS
+// ==========================
+
+function showReconnectingOverlay(message = 'Reconnecting...') {
+  if (!reconnectingOverlay) return;
+  
+  const messageEl = reconnectingOverlay.querySelector('.reconnecting-message');
+  if (messageEl) {
+    messageEl.textContent = message;
+  }
+  
+  reconnectingOverlay.style.display = 'flex';
+}
+
+function hideReconnectingOverlay() {
+  if (reconnectingOverlay) {
+    reconnectingOverlay.style.display = 'none';
+  }
+}
+
+function showNotification(message, type = 'info') {
+  const notification = document.createElement('div');
+  notification.className = `notification notification-${type}`;
+  notification.textContent = message;
+  
+  document.body.appendChild(notification);
+  
+  setTimeout(() => notification.classList.add('show'), 10);
+  
+  setTimeout(() => {
+    notification.classList.remove('show');
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+
+function renderTypingText() {
+  typingTextDisplay.innerHTML = '';
+  
+  for (let i = 0; i < roundText.length; i++) {
+    const charSpan = document.createElement('span');
+    charSpan.textContent = roundText[i];
+    charSpan.classList.add('char');
+    
+    if (i < currentCharIndex) {
+      charSpan.classList.add('correct');
+    } else if (i === currentCharIndex) {
+      charSpan.classList.add('current');
+    }
+    
+    typingTextDisplay.appendChild(charSpan);
+  }
+}
+
+function updateTimer() {
+  if (isPaused || !startTime) return;
+  
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const remaining = Math.max(0, roundDuration - elapsed);
+  
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  
+  timerDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  
+  if (elapsed > 0) {
+    const wpm = Math.round((correctChars / 5) / (elapsed / 60));
+    const accuracy = totalChars > 0 ? Math.round((correctChars / totalChars) * 100) : 100;
+    
+    wpmDisplay.textContent = wpm;
+    accuracyDisplay.textContent = accuracy;
+  }
+  
+  if (remaining === 0) {
+    clearInterval(timerInterval);
+    typingInput.disabled = true;
+  }
+}
+
+function updateLeaderboard(leaderboard, showRank) {
+  leaderboardBody.innerHTML = '';
+  
+  leaderboard.forEach((entry, index) => {
+    const row = document.createElement('tr');
+    
+    if (entry.name === participantName) {
+      row.classList.add('highlight');
+    }
+    
+    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+    
+    row.innerHTML = `
+      <td>${showRank ? `${medal} ${index + 1}` : index + 1}</td>
+      <td>${entry.name}</td>
+      <td>${entry.wpm}</td>
+      <td>${entry.accuracy}%</td>
+    `;
+    
+    leaderboardBody.appendChild(row);
+  });
+}
+
+function updateFinalRankings(rankings) {
+  leaderboardBody.innerHTML = '';
+  
+  rankings.forEach((entry, index) => {
+    const row = document.createElement('tr');
+    
+    if (entry.name === participantName) {
+      row.classList.add('highlight');
+    }
+    
+    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+    
+    row.innerHTML = `
+      <td>${medal} ${index + 1}</td>
+      <td>${entry.name}</td>
+      <td>${entry.averageWpm}</td>
+      <td>${entry.averageAccuracy}%</td>
+    `;
+    
+    leaderboardBody.appendChild(row);
+  });
+}
+
+// ==========================
+// EVENT LISTENERS
+// ==========================
+
+joinBtn.addEventListener('click', () => {
+  const code = codeInput.value.trim().toUpperCase();
+  const name = nameInput.value.trim();
+  
+  if (!code || code.length < 5) {
+    showNotification('Please enter a valid competition code', 'error');
+    return;
+  }
+  
+  if (!name || name.length < 2) {
+    showNotification('Please enter a valid name (min 2 characters)', 'error');
+    return;
+  }
+  
+  if (!socket || !socket.connected) {
+    connectSocket();
+  }
+  
+  if (socket.connected) {
+    socket.emit('join', { code, participantName: name });
+  } else {
+    socket.once('connect', () => {
+      socket.emit('join', { code, participantName: name });
+    });
   }
 });
 
-// ============= CORE UPDATE FUNCTION =============
-function updateTypingStats() {
-  const inputText = typedChars.join('');
-  const correctChars = calculateCorrectChars(inputText, typingText);
-  const totalChars = inputText.length;
-  const incorrectChars = totalChars - correctChars;
+nameInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    joinBtn.click();
+  }
+});
 
-  const elapsedSeconds = (Date.now() - testStartTime) / 1000;
-  const wpm = elapsedSeconds > 0
-    ? Math.round((correctChars / 5) / (elapsedSeconds / 60))
-    : 0;
-  const accuracy = totalChars > 0
-    ? Math.round((correctChars / totalChars) * 100)
-    : 100;
-  wpmDisplay.textContent = wpm;
-  accuracyDisplay.textContent = accuracy + '%';
-  updateTextDisplay(inputText);
+codeInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    nameInput.focus();
+  }
+});
 
-  // Emit progress (server validates)
+typingInput.addEventListener('input', (e) => {
+  if (!roundText || isPaused) return;
+  
+  const typed = e.target.value;
+  const expectedText = roundText.substring(currentCharIndex, currentCharIndex + typed.length);
+  
+  let newCorrectChars = correctChars;
+  let newCurrentCharIndex = currentCharIndex;
+  
+  for (let i = 0; i < typed.length; i++) {
+    if (typed[i] === expectedText[i]) {
+      newCorrectChars++;
+      newCurrentCharIndex++;
+    } else {
+      typingInput.value = typed.substring(0, i);
+      break;
+    }
+  }
+  
+  correctChars = newCorrectChars;
+  currentCharIndex = newCurrentCharIndex;
+  totalChars++;
+  
+  if (typingInput.value === typed) {
+    typingInput.value = '';
+  }
+  
+  renderTypingText();
+  
+  const elapsedTime = Date.now() - startTime;
   socket.emit('progress', {
     competitionId,
     correctChars,
     totalChars,
-    errors: totalErrors,
-    backspaces: backspaceCount,
+    currentChar: currentCharIndex,
+    elapsedTime
   });
-}
-
-// ============= SUPPORTING FUNCTIONS =============
-function calculateCorrectChars(input, reference) {
-  let correct = 0;
-  for (let i = 0; i < input.length; i++) {
-    if (input[i] === reference[i]) correct++;
+  
+  if (totalChars % 10 === 0) {
+    saveStateToLocalStorage();
   }
-  return correct;
-}
-
-function updateTextDisplay(inputText) {
-  let html = '';
-  for (let i = 0; i < typingText.length; i++) {
-    const char = typingText[i];
-    let span = `<span>${char}</span>`;
-
-    if (i < inputText.length) {
-      if (inputText[i] === char) {
-        span = `<span class="correct">${char}</span>`;
-      } else {
-        span = `<span class="incorrect">${char}</span>`;
-      }
-    } else if (i === inputText.length) {
-      span = `<span class="current">${char}</span>`;
-    }
-    html += span;
-  }
-  textDisplay.innerHTML = html;
-}
-
-// Timer
-function startTimer(duration) {
-  currentRoundDuration = duration;
-  let timeLeft = duration;
-  timerDisplay.textContent = timeLeft + 's';
-
-  const timerInterval = setInterval(() => {
-    timeLeft--;
-    timerDisplay.textContent = timeLeft + 's';
-
-    if (timeLeft <= 0) {
-      clearInterval(timerInterval);
-      isTestInProgress = false;
-      typingInput.disabled = true;
-    }
-  }, 1000);
-}
-
-// Error display
-function showError(message) {
-  joinError.textContent = message;
-  joinError.classList.add('show');
-  setTimeout(() => joinError.classList.remove('show'), 4000);
-}
-
-// ============= SOCKET EVENTS =============
-socket.on('joinSuccess', (data) => {
-  competitionId = data.competitionId;
-  competitionNameDisplay.textContent = data.name;
-  welcomeName.textContent = participantName;
-
-  joinScreen.classList.add('hidden');
-  lobbyScreen.classList.remove('hidden');
-});
-
-socket.on('participantJoined', (data) => {
-  participantCountDisplay.textContent = data.totalParticipants;
-});
-
-socket.on('roundStarted', (data) => {
-  currentRound = data.roundIndex;
-  typingText = data.text;
-  const duration = data.duration;
-
-  typedChars = [];
-  totalErrors = 0;
-  backspaceCount = 0;
-  errorIndices.clear();
-
-  lobbyScreen.classList.add('hidden');
-  resultsScreen.classList.add('hidden');
-  testScreen.classList.remove('hidden');
-
-  typingInput.value = '';
-  typingInput.disabled = false;
-  typingInput.focus();
-  updateTextDisplay('');
-
-  wpmDisplay.textContent = '0';
-  accuracyDisplay.textContent = '100%';
-
-  isTestInProgress = true;
-  testStartTime = Date.now();
-
-  startTimer(duration);
-});
-
-socket.on('roundEnded', (data) => {
-  isTestInProgress = false;
-  typingInput.disabled = true;
-  testScreen.classList.add('hidden');
-  resultsScreen.classList.remove('hidden');
-
-  const personalResult = data.leaderboard.find(item => item.name === participantName);
-  if (personalResult) {
-    document.getElementById('resultWpm').textContent = personalResult.wpm;
-    document.getElementById('resultAccuracy').textContent = personalResult.accuracy + '%';
-    document.getElementById('nextRoundText').innerHTML = `
-      Errors: <b>${personalResult.errors || 0}</b> |
-      Backspaces: <b>${personalResult.backspaces || 0}</b> |
-      Fair Score: <b>${personalResult.fairScore || 0}</b>
-    `;
+  
+  if (currentCharIndex >= roundText.length) {
+    typingInput.disabled = true;
+    showNotification('Round completed!', 'success');
   }
 });
 
-socket.on('finalResults', (data) => {
-  resultsScreen.classList.add('hidden');
-  finalScreen.classList.remove('hidden');
+typingInput.addEventListener('copy', (e) => e.preventDefault());
+typingInput.addEventListener('paste', (e) => e.preventDefault());
+typingInput.addEventListener('cut', (e) => e.preventDefault());
 
-  const rankingsHtml = data.rankings.map((item, index) => {
-    const medals = ['🥇', '🥈', '🥉'];
-    const medal = medals[index] || `#${index + 1}`;
+document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    return `
-      <div class="rank-item">
-        <div class="rank-medal">${medal}</div>
-        <div class="rank-details">
-          <div class="rank-name">${item.name}</div>
-          <div class="rank-stats">
-            <span>Avg WPM: <strong>${item.avgWpm}</strong></span>
-            <span>Accuracy: <strong>${item.avgAccuracy}%</strong></span>
-            <span>Errors: <strong>${item.totalErrors}</strong></span>
-            <span>Backspaces: <strong>${item.totalBackspaces}</strong></span>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  document.getElementById('finalRankings').innerHTML = rankingsHtml;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && typingSection.style.display === 'flex') {
+    showNotification('⚠️ Warning: Tab switching detected!', 'warning');
+  }
 });
 
-socket.on('participantLeft', (data) => {
-  participantCountDisplay.textContent = data.totalParticipants;
+nextRoundBtn.addEventListener('click', () => {
+  resultsSection.style.display = 'none';
+  waitingSection.style.display = 'flex';
+  waitingMessage.textContent = 'Waiting for next round...';
 });
 
-socket.on('error', (data) => {
-  showError(data.message || 'An error occurred');
+// ==========================
+// INITIALIZATION
+// ==========================
+
+document.addEventListener('DOMContentLoaded', () => {
+  restorePreviousSession();
 });
 
-socket.on('disconnect', () => {
-  console.log('⚠️ Disconnected from server');
-});
+setInterval(() => {
+  if (typingSection.style.display === 'flex' && !isPaused) {
+    saveStateToLocalStorage();
+  }
+}, 5000);

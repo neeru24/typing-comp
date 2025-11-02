@@ -2,609 +2,922 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const mongoose = require('mongoose');
-const cors = require('cors');
-const dotenv = require('dotenv');
 const path = require('path');
-dotenv.config();
+require('dotenv').config();
+const rateLimit = require('express-rate-limit');
+const { body, validationResult } = require('express-validator');
+const validator = require('validator');
+const winston = require('winston');
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] }
-});
-
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "/public")));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "/public/participant.html"));
-});
-
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/typing-platform', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('✓ MongoDB connected'))
-.catch(err => console.error('❌ MongoDB error:', err));
-
+// Import models
 const Competition = require('./models/Competition');
 
-// ============= API ROUTES =============
-app.post('/api/create', async (req, res) => {
+// Initialize Express app
+const app = express();
+const server = http.createServer(app);
+
+// ==========================
+// WINSTON LOGGER SETUP (P0)
+// ==========================
+const logger = winston.createLogger({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'typing-competition' },
+  transports: [
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'logs/combined.log' }),
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      )
+    })
+  ]
+});
+
+// ==========================
+// SOCKET.IO SETUP WITH CONNECTION STATE RECOVERY (P0)
+// ==========================
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: ['GET', 'POST']
+  },
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+    skipMiddlewares: true
+  },
+  pingTimeout: 60000,
+  pingInterval: 25000
+});
+
+// ==========================
+// MIDDLEWARE SETUP
+// ==========================
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(path.join(__dirname, 'public'))); // IMPORTANT: Changed from '../frontend' to 'public'
+
+// Rate limiting middleware (P1)
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const createCompetitionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many competitions created, please try again later.'
+});
+
+app.use('/api', apiLimiter);
+
+// ==========================
+// IN-MEMORY COMPETITION STATE
+// ==========================
+const competitionsData = new Map();
+
+// ==========================
+// MONGODB CONNECTION WITH ERROR HANDLING (P0)
+// ==========================
+mongoose.connect(process.env.MONGODB_URI, {
+  maxPoolSize: 50,
+  minPoolSize: 10,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+})
+.then(() => {
+  logger.info('✓ MongoDB connected successfully');
+  recoverActiveCompetitions();
+})
+.catch(err => {
+  logger.error('MongoDB connection error:', err);
+  process.exit(1);
+});
+
+mongoose.connection.on('error', err => {
+  logger.error('MongoDB runtime error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  logger.warn('MongoDB disconnected');
+});
+
+// ==========================
+// CRASH RECOVERY FUNCTION (P0 - CRITICAL)
+// ==========================
+async function recoverActiveCompetitions() {
   try {
-    const { name, description, rounds } = req.body;
-
-    if (!name || !rounds || rounds.length === 0) {
-      return res.status(400).json({ error: 'Name and rounds required' });
-    }
-
-    const code = generateCode();
-    const competition = new Competition({
-      name,
-      description: description || '',
-      code,
-      rounds: rounds.map((r, index) => ({
-        roundNumber: index + 1,
-        text: r.text,
-        duration: r.duration,
-        status: 'pending',
-        startedAt: null,
-        endedAt: null,
-        totalDuration: 0,
-        participantsCompleted: 0,
-        highestWpm: 0,
-        lowestWpm: 0,
-        averageWpm: 0,
-        averageAccuracy: 0,
-        results: [],
-        createdAt: new Date()
-      })),
-      status: 'pending',
-      currentRound: -1,
-      totalRounds: rounds.length,
-      roundsCompleted: 0,
-      finalRankings: [],
-      createdAt: new Date()
+    const activeCompetitions = await Competition.find({
+      status: 'ongoing',
+      $or: [
+        { 'rounds.startedAt': { $exists: true, $ne: null } },
+        { completedAt: { $exists: false } }
+      ]
     });
 
-    await competition.save();
-    console.log('✓ Competition created:', code);
-    res.json({ success: true, code, competitionId: competition._id });
+    logger.info(`Found ${activeCompetitions.length} active competitions to recover`);
+
+    for (const comp of activeCompetitions) {
+      const compData = {
+        participants: new Map(),
+        currentRound: comp.currentRound || 0,
+        lastLeaderboardUpdate: null,
+        isPaused: false,
+        pausedAt: null
+      };
+
+      if (comp.participants && comp.participants.length > 0) {
+        comp.participants.forEach(p => {
+          compData.participants.set(p.name, {
+            name: p.name,
+            socketId: null,
+            joinedAt: p.joinedAt,
+            isReconnecting: true
+          });
+        });
+      }
+
+      competitionsData.set(comp._id.toString(), compData);
+      logger.info(`Recovered competition: ${comp.name} (${comp.code}) with ${compData.participants.size} participants`);
+
+      const currentRound = comp.rounds[comp.currentRound];
+      if (currentRound && currentRound.startedAt && !currentRound.endedAt) {
+        const now = Date.now();
+        const elapsedTime = now - new Date(currentRound.startedAt).getTime();
+        const roundDuration = currentRound.duration * 1000;
+
+        if (elapsedTime >= roundDuration) {
+          logger.warn(`Round ${comp.currentRound} in competition ${comp.code} should have ended, ending now`);
+          await endRound(comp._id.toString(), comp.currentRound);
+        } else {
+          const remainingTime = roundDuration - elapsedTime;
+          setTimeout(() => endRound(comp._id.toString(), comp.currentRound), remainingTime);
+          logger.info(`Round ${comp.currentRound} in competition ${comp.code} will end in ${Math.round(remainingTime/1000)}s`);
+        }
+      }
+    }
   } catch (error) {
-    console.error('Create error:', error);
-    res.status(500).json({ error: 'Failed to create competition' });
+    logger.error('Error recovering active competitions:', error);
   }
-});
+}
+
+// ==========================
+// HELPER FUNCTIONS
+// ==========================
+
+function sanitizeInput(input, type = 'string') {
+  if (!input) return '';
+  
+  let sanitized = String(input).trim();
+  
+  switch(type) {
+    case 'name':
+      sanitized = sanitized.replace(/[^a-zA-Z0-9\s\-_.()]/g, '');
+      break;
+    case 'code':
+      sanitized = sanitized.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      break;
+    case 'text':
+      sanitized = validator.escape(sanitized);
+      break;
+    default:
+      sanitized = validator.escape(sanitized);
+  }
+  
+  return sanitized.substring(0, 500);
+}
+
+function generateCompetitionCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+function validateWPM(wpm, elapsedTime, correctChars) {
+  if (wpm > 200) {
+    logger.warn(`Suspicious WPM detected: ${wpm}`);
+    return { valid: false, reason: 'WPM too high (>200)' };
+  }
+  
+  if (elapsedTime < 1000 && correctChars > 10) {
+    return { valid: false, reason: 'Too fast typing detected' };
+  }
+  
+  const expectedWPM = (correctChars / 5) / (elapsedTime / 60000);
+  const diff = Math.abs(wpm - expectedWPM);
+  
+  if (diff > 20) {
+    logger.warn(`WPM mismatch: reported ${wpm}, expected ${expectedWPM}`);
+    return { valid: false, reason: 'WPM calculation mismatch' };
+  }
+  
+  return { valid: true };
+}
+
+async function updateAndBroadcastLeaderboard(competitionId, compData) {
+  try {
+    const competition = await Competition.findById(competitionId);
+    if (!competition || !competition.rounds[compData.currentRound]) return;
+
+    const currentRound = competition.rounds[compData.currentRound];
+    if (!currentRound.startedAt) return;
+
+    const leaderboard = [];
+
+    for (const [name, participant] of compData.participants) {
+      if (participant.currentProgress) {
+        const elapsedTime = Math.min(
+          participant.currentProgress.elapsedTime || 0,
+          currentRound.duration * 1000
+        );
+        
+        const wpm = Math.round(
+          (participant.currentProgress.correctChars / 5) / (elapsedTime / 60000)
+        ) || 0;
+        
+        const accuracy = Math.round(
+          (participant.currentProgress.correctChars / 
+          Math.max(participant.currentProgress.totalChars, 1)) * 100
+        ) || 0;
+
+        leaderboard.push({
+          name,
+          wpm,
+          accuracy,
+          correctChars: participant.currentProgress.correctChars || 0
+        });
+      }
+    }
+
+    leaderboard.sort((a, b) => b.wpm - a.wpm || b.accuracy - a.accuracy);
+
+    io.to(competitionId).emit('leaderboardUpdate', {
+      round: compData.currentRound,
+      leaderboard
+    });
+
+    compData.lastLeaderboardUpdate = Date.now();
+  } catch (error) {
+    logger.error('Error updating leaderboard:', error);
+  }
+}
+
+async function endRound(competitionId, roundIndex) {
+  try {
+    const competition = await Competition.findById(competitionId);
+    const compData = competitionsData.get(competitionId);
+    
+    if (!competition || !compData) return;
+
+    const round = competition.rounds[roundIndex];
+    if (!round || round.endedAt) return;
+
+    round.endedAt = new Date();
+    const results = [];
+
+    for (const [name, participant] of compData.participants) {
+      if (participant.currentProgress) {
+        const elapsedTime = Math.min(
+          participant.currentProgress.elapsedTime || 0,
+          round.duration * 1000
+        );
+        
+        const wpm = Math.round(
+          (participant.currentProgress.correctChars / 5) / (elapsedTime / 60000)
+        ) || 0;
+        
+        const accuracy = Math.round(
+          (participant.currentProgress.correctChars / 
+          Math.max(participant.currentProgress.totalChars, 1)) * 100
+        ) || 0;
+
+        results.push({
+          participantName: name,
+          wpm,
+          accuracy,
+          correctChars: participant.currentProgress.correctChars || 0
+        });
+      }
+    }
+
+    round.results = results.sort((a, b) => b.wpm - a.wpm || b.accuracy - a.accuracy);
+    await competition.save();
+
+    logger.info(`Round ${roundIndex} ended for competition ${competition.code}`);
+
+    io.to(competitionId).emit('roundEnded', {
+      roundIndex,
+      leaderboard: round.results
+    });
+
+    for (const participant of compData.participants.values()) {
+      participant.currentProgress = null;
+    }
+
+    if (roundIndex === competition.rounds.length - 1) {
+      competition.status = 'completed';
+      competition.completedAt = new Date();
+      await competition.save();
+
+      const finalRankings = calculateFinalRankings(competition);
+      
+      io.to(competitionId).emit('finalResults', { rankings: finalRankings });
+      
+      logger.info(`Competition ${competition.code} completed`);
+      
+      setTimeout(() => {
+        competitionsData.delete(competitionId);
+        logger.info(`Cleaned up competition ${competition.code} from memory`);
+      }, 5 * 60 * 1000);
+    }
+  } catch (error) {
+    logger.error('Error ending round:', error);
+  }
+}
+
+function calculateFinalRankings(competition) {
+  const participantStats = new Map();
+
+  competition.rounds.forEach(round => {
+    round.results.forEach(result => {
+      if (!participantStats.has(result.participantName)) {
+        participantStats.set(result.participantName, {
+          name: result.participantName,
+          totalWpm: 0,
+          totalAccuracy: 0,
+          roundsCompleted: 0
+        });
+      }
+      
+      const stats = participantStats.get(result.participantName);
+      stats.totalWpm += result.wpm;
+      stats.totalAccuracy += result.accuracy;
+      stats.roundsCompleted++;
+    });
+  });
+
+  const rankings = Array.from(participantStats.values())
+    .map(stats => ({
+      name: stats.name,
+      averageWpm: Math.round(stats.totalWpm / stats.roundsCompleted),
+      averageAccuracy: Math.round(stats.totalAccuracy / stats.roundsCompleted),
+      roundsCompleted: stats.roundsCompleted
+    }))
+    .sort((a, b) => b.averageWpm - a.averageWpm || b.averageAccuracy - a.averageAccuracy);
+
+  return rankings;
+}
+
+function getUniqueName(competitionId, requestedName) {
+  const compData = competitionsData.get(competitionId);
+  if (!compData) return requestedName;
+
+  let uniqueName = requestedName;
+  let counter = 2;
+
+  while (compData.participants.has(uniqueName)) {
+    uniqueName = `${requestedName} (${counter})`;
+    counter++;
+  }
+
+  if (uniqueName !== requestedName) {
+    logger.info(`Duplicate name ${requestedName} changed to ${uniqueName}`);
+  }
+
+  return uniqueName;
+}
+
+// ==========================
+// API ROUTES
+// ==========================
+
+app.post('/api/create', 
+  createCompetitionLimiter,
+  [
+    body('name').trim().isLength({ min: 3, max: 100 }).withMessage('Name must be 3-100 characters'),
+    body('rounds').isArray({ min: 1, max: 10 }).withMessage('Must have 1-10 rounds'),
+    body('rounds.*.text').trim().isLength({ min: 10, max: 5000 }).withMessage('Text must be 10-5000 characters'),
+    body('rounds.*.duration').isInt({ min: 10, max: 600 }).withMessage('Duration must be 10-600 seconds')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        logger.warn('Validation errors in create competition:', errors.array());
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { name, rounds } = req.body;
+
+      const sanitizedName = sanitizeInput(name, 'name');
+      const sanitizedRounds = rounds.map(r => ({
+        text: sanitizeInput(r.text, 'text'),
+        duration: parseInt(r.duration)
+      }));
+
+      let code;
+      let codeExists = true;
+      let attempts = 0;
+      
+      while (codeExists && attempts < 10) {
+        code = generateCompetitionCode();
+        const existing = await Competition.findOne({ code });
+        codeExists = !!existing;
+        attempts++;
+      }
+
+      if (codeExists) {
+        return res.status(500).json({ success: false, message: 'Failed to generate unique code' });
+      }
+
+      const competition = new Competition({
+        name: sanitizedName,
+        code,
+        organizer: 'TechFest',
+        status: 'waiting',
+        rounds: sanitizedRounds,
+        participants: [],
+        currentRound: 0
+      });
+
+      await competition.save();
+
+      competitionsData.set(competition._id.toString(), {
+        participants: new Map(),
+        currentRound: 0,
+        lastLeaderboardUpdate: null,
+        isPaused: false,
+        pausedAt: null
+      });
+
+      logger.info(`Competition created: ${sanitizedName} (${code})`);
+
+      res.json({
+        success: true,
+        code,
+        competitionId: competition._id
+      });
+    } catch (error) {
+      logger.error('Error creating competition:', error);
+      res.status(500).json({ success: false, message: 'Server error' });
+    }
+  }
+);
 
 app.get('/api/competition/:code', async (req, res) => {
   try {
-    const competition = await Competition.findOne({ code: req.params.code });
-    if (!competition) {
-      return res.status(404).json({ error: 'Competition not found' });
+    const code = sanitizeInput(req.params.code, 'code');
+    
+    if (!code || code.length < 5) {
+      return res.status(400).json({ success: false, message: 'Invalid code' });
     }
+
+    const competition = await Competition.findOne({ code });
+    
+    if (!competition) {
+      return res.status(404).json({ success: false, message: 'Competition not found' });
+    }
+
+    const compData = competitionsData.get(competition._id.toString());
+
     res.json({
+      success: true,
       id: competition._id,
       name: competition.name,
       code: competition.code,
       status: competition.status,
       roundCount: competition.rounds.length,
-      roundsCompleted: competition.roundsCompleted,
-      participants: competition.participants.length,
+      participants: compData ? compData.participants.size : 0,
       currentRound: competition.currentRound
     });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch competition' });
+    logger.error('Error fetching competition:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
-// ============= SOCKET.IO =============
-const activeCompetitions = new Map();
+app.get('/health', (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    activeCompetitions: competitionsData.size
+  };
+  
+  res.json(health);
+});
+
+// ==========================
+// SOCKET.IO EVENT HANDLERS
+// ==========================
 
 io.on('connection', (socket) => {
-  console.log('🔌 Connected:', socket.id);
+  logger.info(`Socket connected: ${socket.id}, recovered: ${socket.recovered}`);
 
-  // PARTICIPANT JOINS
-  socket.on('join', async (data) => {
-    const { code, participantName } = data;
+  if (socket.recovered) {
+    logger.info(`Socket ${socket.id} recovered successfully`);
+  }
+
+  socket.on('join', async ({ code, participantName }) => {
     try {
-      const competition = await Competition.findOne({ code });
+      if (!code || !participantName) {
+        return socket.emit('error', { message: 'Code and name are required' });
+      }
+
+      const sanitizedCode = sanitizeInput(code, 'code');
+      let sanitizedName = sanitizeInput(participantName, 'name');
+
+      if (sanitizedCode.length < 5 || sanitizedName.length < 2) {
+        return socket.emit('error', { message: 'Invalid code or name format' });
+      }
+
+      const competition = await Competition.findOne({ code: sanitizedCode });
+      
       if (!competition) {
-        socket.emit('error', { message: 'Competition code not found' });
-        return;
+        logger.warn(`Join attempt with invalid code: ${sanitizedCode}`);
+        return socket.emit('error', { message: 'Competition not found' });
       }
 
-      if (!activeCompetitions.has(competition._id.toString())) {
-        activeCompetitions.set(competition._id.toString(), {
-          competitionId: competition._id.toString(),
-          code,
-          currentRound: -1,
-          roundInProgress: false,
+      if (competition.status === 'completed') {
+        return socket.emit('error', { message: 'Competition has ended' });
+      }
+
+      const competitionId = competition._id.toString();
+      let compData = competitionsData.get(competitionId);
+
+      if (!compData) {
+        compData = {
           participants: new Map(),
-          competitionDoc: competition
-        });
+          currentRound: competition.currentRound || 0,
+          lastLeaderboardUpdate: null,
+          isPaused: false,
+          pausedAt: null
+        };
+        competitionsData.set(competitionId, compData);
       }
 
-      const compData = activeCompetitions.get(competition._id.toString());
-      
-      // Check if already joined
+      sanitizedName = getUniqueName(competitionId, sanitizedName);
+
+      if (compData.participants.size >= 200) {
+        return socket.emit('error', { message: 'Competition is full (max 200 participants)' });
+      }
+
       const existingParticipant = Array.from(compData.participants.values())
-        .find(p => p.name === participantName);
-      
+        .find(p => p.name === sanitizedName || p.socketId === socket.id);
+
       if (existingParticipant) {
-        socket.emit('error', { message: 'Name already taken' });
-        return;
+        existingParticipant.socketId = socket.id;
+        existingParticipant.isReconnecting = false;
+        logger.info(`Participant reconnected: ${sanitizedName} in ${sanitizedCode}`);
+      } else {
+        compData.participants.set(sanitizedName, {
+          name: sanitizedName,
+          socketId: socket.id,
+          joinedAt: new Date(),
+          currentProgress: null,
+          isReconnecting: false
+        });
+
+        competition.participants.push({
+          name: sanitizedName,
+          socketId: socket.id,
+          joinedAt: new Date()
+        });
+        await competition.save();
+
+        logger.info(`Participant joined: ${sanitizedName} in ${sanitizedCode} (total: ${compData.participants.size})`);
       }
 
-      const participant = {
-        socketId: socket.id,
-        name: participantName,
-        joinedAt: Date.now(),
-        scores: [],
-        currentRoundData: {},
-        roundScores: []
-      };
+      socket.join(competitionId);
+      socket.competitionId = competitionId;
+      socket.participantName = sanitizedName;
 
-      compData.participants.set(socket.id, participant);
+      socket.emit('joinSuccess', {
+        competitionId,
+        name: sanitizedName,
+        roundCount: competition.rounds.length,
+        currentRound: compData.currentRound,
+        isPaused: compData.isPaused
+      });
 
-      // Add to MongoDB participants array
-      await Competition.findByIdAndUpdate(
-        competition._id,
-        {
-          $push: {
-            participants: {
-              name: participantName,
-              socketId: socket.id,
-              joinedAt: new Date(),
-              totalWpm: 0,
-              totalAccuracy: 0,
-              roundsCompleted: 0,
-              finalRank: null,
-              roundScores: []
-            }
-          }
-        }
-      );
-
-      socket.join(`competition_${competition._id}`);
-      socket.competitionId = competition._id.toString();
-      socket.participantName = participantName;
-      socket.isOrganizer = false;
-
-      // Notify all
-      io.to(`competition_${competition._id}`).emit('participantJoined', {
-        name: participantName,
+      io.to(competitionId).emit('participantJoined', {
+        name: sanitizedName,
         totalParticipants: compData.participants.size
       });
 
-      socket.emit('joinSuccess', {
-        competitionId: competition._id,
-        name: competition.name,
-        roundCount: competition.rounds.length
-      });
+      const currentRound = competition.rounds[compData.currentRound];
+      if (currentRound && currentRound.startedAt && !currentRound.endedAt) {
+        const elapsedTime = Date.now() - new Date(currentRound.startedAt).getTime();
+        const remainingTime = (currentRound.duration * 1000) - elapsedTime;
 
-      console.log(`✓ ${participantName} joined ${code} (Total: ${compData.participants.size})`);
+        if (remainingTime > 0 && !compData.isPaused) {
+          socket.emit('roundStarted', {
+            roundIndex: compData.currentRound,
+            text: currentRound.text,
+            duration: currentRound.duration,
+            startTime: new Date(currentRound.startedAt).getTime(),
+            elapsedTime: Math.floor(elapsedTime / 1000)
+          });
+        }
+      }
     } catch (error) {
-      console.error('Join error:', error);
-      socket.emit('error', { message: 'Failed to join' });
+      logger.error('Error in join event:', error);
+      socket.emit('error', { message: 'Failed to join competition' });
     }
   });
 
-  // ORGANIZER JOINS
-  socket.on('organizerJoin', (data) => {
-    socket.join(`competition_${data.competitionId}`);
-    socket.isOrganizer = true;
-    console.log('✓ Organizer connected');
+  socket.on('rejoin', async ({ code, name, currentChar, elapsedTime }) => {
+    try {
+      const sanitizedCode = sanitizeInput(code, 'code');
+      const sanitizedName = sanitizeInput(name, 'name');
+
+      const competition = await Competition.findOne({ code: sanitizedCode });
+      if (!competition) {
+        return socket.emit('error', { message: 'Competition not found' });
+      }
+
+      const competitionId = competition._id.toString();
+      const compData = competitionsData.get(competitionId);
+
+      if (!compData) {
+        return socket.emit('error', { message: 'Competition not active' });
+      }
+
+      const participant = compData.participants.get(sanitizedName);
+      if (!participant) {
+        return socket.emit('error', { message: 'Participant not found' });
+      }
+
+      participant.socketId = socket.id;
+      participant.isReconnecting = false;
+
+      if (participant.currentProgress) {
+        participant.currentProgress.currentChar = currentChar || participant.currentProgress.currentChar;
+        participant.currentProgress.elapsedTime = elapsedTime || participant.currentProgress.elapsedTime;
+      }
+
+      socket.join(competitionId);
+      socket.competitionId = competitionId;
+      socket.participantName = sanitizedName;
+
+      logger.info(`Participant rejoined: ${sanitizedName} in ${sanitizedCode}`);
+
+      socket.emit('rejoinSuccess', {
+        competitionId,
+        name: sanitizedName,
+        currentRound: compData.currentRound,
+        currentProgress: participant.currentProgress
+      });
+    } catch (error) {
+      logger.error('Error in rejoin event:', error);
+      socket.emit('error', { message: 'Failed to rejoin' });
+    }
   });
 
-  // START ROUND
-  socket.on('startRound', async (data) => {
-    const { competitionId, roundIndex } = data;
+  socket.on('startRound', async ({ competitionId, roundIndex }) => {
     try {
       const competition = await Competition.findById(competitionId);
-      if (!competition) {
-        socket.emit('error', { message: 'Competition not found' });
-        return;
+      const compData = competitionsData.get(competitionId);
+
+      if (!competition || !compData) {
+        return socket.emit('error', { message: 'Competition not found' });
       }
 
-      const compData = activeCompetitions.get(competitionId);
-      if (!compData) return;
+      if (roundIndex < 0 || roundIndex >= competition.rounds.length) {
+        return socket.emit('error', { message: 'Invalid round index' });
+      }
 
       const round = competition.rounds[roundIndex];
-      if (!round) {
-        socket.emit('error', { message: 'Round not found' });
-        return;
+      if (round.startedAt) {
+        return socket.emit('error', { message: 'Round already started' });
       }
 
-      compData.currentRound = roundIndex;
-      compData.roundInProgress = true;
-      const startTime = new Date();
-      round.startedAt = startTime;
-      round.status = 'in-progress';
+      if (compData.participants.size === 0) {
+        return socket.emit('error', { message: 'Cannot start with 0 participants' });
+      }
 
-      // Reset participant data for this round
-      compData.participants.forEach((p) => {
-        p.currentRoundData = {
+      round.startedAt = new Date();
+      compData.currentRound = roundIndex;
+      compData.isPaused = false;
+      competition.currentRound = roundIndex;
+      competition.status = 'ongoing';
+      
+      await competition.save();
+
+      logger.info(`Round ${roundIndex} started for competition ${competition.code} with ${compData.participants.size} participants`);
+
+      for (const participant of compData.participants.values()) {
+        participant.currentProgress = {
           correctChars: 0,
           totalChars: 0,
-          wpm: 0,
-          accuracy: 0,
-          errors: 0,
-          backspaces: 0,
-          testStartTime: Date.now()
+          currentChar: 0,
+          elapsedTime: 0
         };
-      });
+      }
 
-      // Update in MongoDB
-      await Competition.findByIdAndUpdate(
-        competitionId,
-        {
-          currentRound: roundIndex,
-          $set: {
-            [`rounds.${roundIndex}.startedAt`]: startTime,
-            [`rounds.${roundIndex}.status`]: 'in-progress'
-          }
-        }
-      );
-
-      // Broadcast to all
-      io.to(`competition_${competitionId}`).emit('roundStarted', {
+      io.to(competitionId).emit('roundStarted', {
         roundIndex,
         text: round.text,
         duration: round.duration,
         startTime: Date.now()
       });
 
-      console.log(`✓ Round ${roundIndex + 1} started`);
-
-      // Auto-end after duration
-      setTimeout(async () => {
-        // Re-fetch competition doc to have latest rounds content & metadata
-        const competitionDoc = await Competition.findById(competitionId);
-        await endRound(competitionId, roundIndex, competitionDoc, compData);
-      }, round.duration * 1000);
-
+      setTimeout(() => endRound(competitionId, roundIndex), round.duration * 1000);
     } catch (error) {
-      console.error('Start round error:', error);
+      logger.error('Error starting round:', error);
       socket.emit('error', { message: 'Failed to start round' });
     }
   });
 
-  // TYPING PROGRESS
-  socket.on('progress', async (data) => {
-    const { competitionId, correctChars, totalChars, errors = 0, backspaces = 0 } = data;
-
+  socket.on('progress', async ({ competitionId, correctChars, totalChars, currentChar, elapsedTime }) => {
     try {
-      const compData = activeCompetitions.get(competitionId);
-      if (!compData || !compData.roundInProgress) return;
+      const compData = competitionsData.get(competitionId);
+      if (!compData || !socket.participantName) return;
 
-      const participant = compData.participants.get(socket.id);
+      const participant = compData.participants.get(socket.participantName);
       if (!participant) return;
 
-      const startTime = participant.currentRoundData.testStartTime;
-      const elapsedSeconds = (Date.now() - startTime) / 1000;
+      const competition = await Competition.findById(competitionId);
+      if (!competition) return;
 
-      // Validate and compute
-      const wpm = elapsedSeconds > 0 
-        ? Math.round((correctChars / 5) / (elapsedSeconds / 60)) 
-        : 0;
-      const accuracy = totalChars > 0 
-        ? Math.round((correctChars / totalChars) * 100) 
-        : 100;
-      const incorrectChars = totalChars - correctChars;
+      const round = competition.rounds[compData.currentRound];
+      if (!round || !round.startedAt || round.endedAt || compData.isPaused) return;
 
-      participant.currentRoundData = {
-        correctChars,
-        totalChars,
-        incorrectChars,
-        wpm,
-        accuracy,
-        errors,
-        backspaces,
-        testStartTime: startTime,
-        elapsedSeconds
-      };
-
-      // Update leaderboard every 1 second
-      if (!compData.lastLeaderboardUpdate || Date.now() - compData.lastLeaderboardUpdate > 1000) {
-        updateAndBroadcastLeaderboard(competitionId, compData);
-        compData.lastLeaderboardUpdate = Date.now();
+      const actualElapsedTime = Date.now() - new Date(round.startedAt).getTime();
+      if (elapsedTime > actualElapsedTime + 1000) {
+        logger.warn(`Time manipulation detected from ${socket.participantName}`);
+        return;
       }
 
+      if (correctChars < 0 || totalChars < 0 || currentChar < 0) return;
+      if (totalChars > round.text.length || currentChar > round.text.length) return;
+      if (correctChars > totalChars) return;
+
+      const wpm = Math.round((correctChars / 5) / (elapsedTime / 60000)) || 0;
+      const validation = validateWPM(wpm, elapsedTime, correctChars);
+      
+      if (!validation.valid) {
+        logger.warn(`Invalid WPM from ${socket.participantName}: ${validation.reason}`);
+      }
+
+      participant.currentProgress = {
+        correctChars,
+        totalChars,
+        currentChar,
+        elapsedTime
+      };
+
+      if (!compData.lastLeaderboardUpdate || 
+          Date.now() - compData.lastLeaderboardUpdate > 1000) {
+        updateAndBroadcastLeaderboard(competitionId, compData);
+      }
     } catch (error) {
-      console.error('Progress error:', error);
+      logger.error('Error processing progress:', error);
     }
   });
 
-  // DISCONNECT
-  socket.on('disconnect', async () => {
-    console.log('🔌 Disconnected:', socket.id);
+  socket.on('pauseRound', async ({ competitionId }) => {
+    try {
+      const competition = await Competition.findById(competitionId);
+      const compData = competitionsData.get(competitionId);
 
-    if (socket.competitionId) {
-      const compData = activeCompetitions.get(socket.competitionId);
-      if (compData && !socket.isOrganizer) {
-        const participant = compData.participants.get(socket.id);
+      if (!competition || !compData) {
+        return socket.emit('error', { message: 'Competition not found' });
+      }
+
+      if (compData.isPaused) {
+        return socket.emit('error', { message: 'Round already paused' });
+      }
+
+      compData.isPaused = true;
+      compData.pausedAt = Date.now();
+
+      io.to(competitionId).emit('roundPaused', { 
+        pausedAt: compData.pausedAt 
+      });
+
+      logger.info(`Round paused for competition ${competition.code}`);
+    } catch (error) {
+      logger.error('Error pausing round:', error);
+    }
+  });
+
+  socket.on('resumeRound', async ({ competitionId }) => {
+    try {
+      const competition = await Competition.findById(competitionId);
+      const compData = competitionsData.get(competitionId);
+
+      if (!competition || !compData) {
+        return socket.emit('error', { message: 'Competition not found' });
+      }
+
+      if (!compData.isPaused) {
+        return socket.emit('error', { message: 'Round not paused' });
+      }
+
+      const pauseDuration = Date.now() - compData.pausedAt;
+      compData.isPaused = false;
+
+      const round = competition.rounds[compData.currentRound];
+      if (round && round.startedAt) {
+        round.startedAt = new Date(new Date(round.startedAt).getTime() + pauseDuration);
+        await competition.save();
+      }
+
+      io.to(competitionId).emit('roundResumed', { 
+        resumedAt: Date.now(),
+        pauseDuration 
+      });
+
+      logger.info(`Round resumed for competition ${competition.code}`);
+    } catch (error) {
+      logger.error('Error resuming round:', error);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    logger.info(`Socket disconnected: ${socket.id}`);
+
+    if (socket.competitionId && socket.participantName) {
+      const compData = competitionsData.get(socket.competitionId);
+      
+      if (compData) {
+        const participant = compData.participants.get(socket.participantName);
+        
         if (participant) {
-          compData.participants.delete(socket.id);
-          io.to(`competition_${socket.competitionId}`).emit('participantLeft', {
-            totalParticipants: compData.participants.size
-          });
+          participant.isReconnecting = true;
+          participant.disconnectedAt = Date.now();
+
+          setTimeout(() => {
+            if (participant.isReconnecting && 
+                Date.now() - participant.disconnectedAt > 2 * 60 * 1000) {
+              compData.participants.delete(socket.participantName);
+              
+              io.to(socket.competitionId).emit('participantLeft', {
+                name: socket.participantName,
+                totalParticipants: compData.participants.size
+              });
+
+              logger.info(`Participant ${socket.participantName} removed after timeout`);
+            }
+          }, 2 * 60 * 1000);
         }
       }
     }
   });
 });
 
-// ============= HELPER FUNCTIONS =============
-
-function generateCode() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
-  for (let i = 0; i < 5; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
-
-function typingTextLengthFor(compData) {
-  try {
-    const compDoc = compData.competitionDoc;
-    const idx = compData.currentRound;
-    if (!compDoc || idx == null || idx < 0) return 0;
-    const text = compDoc.rounds[idx].text || '';
-    return text.length;
-  } catch (e) {
-    return 0;
-  }
-}
-
-function updateAndBroadcastLeaderboard(competitionId, compData) {
-  const totalTextLength = typingTextLengthFor(compData) || 0;
-  const leaderboard = Array.from(compData.participants.values())
-    .map(p => ({
-      name: p.name,
-      wpm: p.currentRoundData?.wpm || 0,
-      accuracy: p.currentRoundData?.accuracy || 0,
-      errors: p.currentRoundData?.errors || 0,
-      backspaces: p.currentRoundData?.backspaces || 0,
-      progress: totalTextLength > 0 ? Math.round(((p.currentRoundData?.totalChars || 0) / totalTextLength) * 100) : 0
-    }))
-    .sort((a, b) => b.wpm - a.wpm);
-
-  io.to(`competition_${competitionId}`).emit('leaderboardUpdate', {
-    roundIndex: compData.currentRound,
-    leaderboard
+// ==========================
+// ERROR HANDLING MIDDLEWARE (P0)
+// ==========================
+app.use((err, req, res, next) => {
+  logger.error('Unhandled error:', err);
+  
+  res.status(err.status || 500).json({
+    success: false,
+    message: process.env.NODE_ENV === 'production' 
+      ? 'An error occurred' 
+      : err.message
   });
-}
+});
 
-async function endRound(competitionId, roundIndex, competition, compData) {
-  try {
-    if (!compData || !compData.roundInProgress) return;
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught Exception:', err);
+  process.exit(1);
+});
 
-    compData.roundInProgress = false;
-    const endTime = new Date();
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
-    const participantsArray = Array.from(compData.participants.values());
-    const roundResults = participantsArray.map((p) => ({
-      participantName: p.name,
-      participantId: p.socketId,
-      wpm: p.currentRoundData.wpm || 0,
-      accuracy: p.currentRoundData.accuracy || 0,
-      correctChars: p.currentRoundData.correctChars || 0,
-      totalChars: p.currentRoundData.totalChars || 0,
-      incorrectChars: p.currentRoundData.incorrectChars || 0,
-      errors: p.currentRoundData.errors || 0,
-      backspaces: p.currentRoundData.backspaces || 0,
-      typingTime: Math.round(p.currentRoundData.elapsedSeconds) || 0,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }));
-
-    // Sort by WPM to get ranks
-    const rankedResults = roundResults
-      .sort((a, b) => b.wpm - a.wpm)
-      .map((result, index) => ({
-        ...result,
-        rank: index + 1
-      }));
-
-    // Calculate round statistics
-    const wpmValues = rankedResults.map(r => r.wpm).filter(w => w > 0);
-    const accuracyValues = rankedResults.map(r => r.accuracy);
-
-    const highestWpm = wpmValues.length > 0 ? Math.max(...wpmValues) : 0;
-    const lowestWpm = wpmValues.length > 0 ? Math.min(...wpmValues) : 0;
-    const averageWpm = wpmValues.length > 0 
-      ? Math.round(wpmValues.reduce((a, b) => a + b, 0) / wpmValues.length) 
-      : 0;
-    const averageAccuracy = accuracyValues.length > 0
-      ? Math.round(accuracyValues.reduce((a, b) => a + b, 0) / accuracyValues.length)
-      : 0;
-
-    // Save round results to database
-    await Competition.findByIdAndUpdate(
-      competitionId,
-      {
-        $set: {
-          [`rounds.${roundIndex}.results`]: rankedResults,
-          [`rounds.${roundIndex}.endedAt`]: endTime,
-          [`rounds.${roundIndex}.status`]: 'completed',
-          [`rounds.${roundIndex}.participantsCompleted`]: rankedResults.length,
-          [`rounds.${roundIndex}.highestWpm`]: highestWpm,
-          [`rounds.${roundIndex}.lowestWpm`]: lowestWpm,
-          [`rounds.${roundIndex}.averageWpm`]: averageWpm,
-          [`rounds.${roundIndex}.averageAccuracy`]: averageAccuracy,
-          [`rounds.${roundIndex}.totalDuration`]: endTime - new Date(competition.rounds[roundIndex].startedAt)
-        },
-        roundsCompleted: compData.currentRound + 1
-      }
-    );
-
-    console.log(`✓ Round ${roundIndex + 1} ended - Stats: Avg ${averageWpm} WPM, ${averageAccuracy}% accuracy`);
-
-    // Store scores in participant object (in memory)
-    compData.participants.forEach((p) => {
-      if (!p.scores) p.scores = [];
-      const roundScore = rankedResults.find(r => r.participantName === p.name);
-      if (roundScore) {
-        p.scores.push({
-          round: roundIndex,
-          wpm: roundScore.wpm,
-          accuracy: roundScore.accuracy,
-          rank: roundScore.rank,
-          errors: roundScore.errors || 0,
-          backspaces: roundScore.backspaces || 0
-        });
-        if (!p.roundScores) p.roundScores = [];
-        p.roundScores.push({
-          roundNumber: roundIndex + 1,
-          wpm: roundScore.wpm,
-          accuracy: roundScore.accuracy,
-          rank: roundScore.rank,
-          errors: roundScore.errors || 0,
-          backspaces: roundScore.backspaces || 0
-        });
-      }
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, closing server gracefully');
+  
+  server.close(() => {
+    logger.info('Server closed');
+    mongoose.connection.close(false, () => {
+      logger.info('MongoDB connection closed');
+      process.exit(0);
     });
+  });
+});
 
-    // Send round end to all participants (include errors/backspaces)
-    const finalLeaderboard = rankedResults
-      .sort((a, b) => a.rank - b.rank)
-      .map(r => ({
-        name: r.participantName,
-        wpm: r.wpm,
-        accuracy: r.accuracy,
-        errors: r.errors || 0,
-        backspaces: r.backspaces || 0,
-        rank: r.rank
-      }));
-
-    io.to(`competition_${competitionId}`).emit('roundEnded', {
-      roundIndex,
-      leaderboard: finalLeaderboard
-    });
-
-    // If last round, show final results
-    if (roundIndex === competition.rounds.length - 1) {
-      await showFinalResults(competitionId, compData, competition);
-    }
-
-  } catch (error) {
-    console.error('End round error:', error);
-  }
-}
-
-async function showFinalResults(competitionId, compData, competition) {
-  try {
-    const participantsArray = Array.from(compData.participants.values());
-
-    // Build final rankings: avg WPM, avg accuracy, sum errors/backspaces across rounds
-    const finalRankings = participantsArray
-      .map(p => {
-        const scores = p.scores || [];
-
-        const avgWpm = scores.length > 0 
-          ? Math.round(scores.reduce((sum, s) => sum + s.wpm, 0) / scores.length)
-          : 0;
-
-        const avgAccuracy = scores.length > 0 
-          ? Math.round(scores.reduce((sum, s) => sum + s.accuracy, 0) / scores.length)
-          : 0;
-
-        const highestWpm = scores.length > 0
-          ? Math.max(...scores.map(s => s.wpm))
-          : 0;
-
-        const lowestWpm = scores.length > 0
-          ? Math.min(...scores.map(s => s.wpm))
-          : 0;
-
-        const totalErrors = scores.length > 0
-          ? scores.reduce((sum, s) => sum + (s.errors || 0), 0)
-          : 0;
-
-        const totalBackspaces = scores.length > 0
-          ? scores.reduce((sum, s) => sum + (s.backspaces || 0), 0)
-          : 0;
-
-        return {
-          participantName: p.name,
-          averageWpm: avgWpm,
-          averageAccuracy: avgAccuracy,
-          totalRoundsCompleted: scores.length,
-          highestWpm,
-          lowestWpm,
-          totalErrors,
-          totalBackspaces,
-          roundScores: scores
-        };
-      })
-      .sort((a, b) => b.averageWpm - a.averageWpm)
-      .map((ranking, index) => ({
-        ...ranking,
-        rank: index + 1
-      }));
-
-    // Save final results to database
-    await Competition.findByIdAndUpdate(
-      competitionId,
-      {
-        status: 'completed',
-        completedAt: new Date(),
-        finalRankings: finalRankings.map(r => ({
-          rank: r.rank,
-          participantName: r.participantName,
-          averageWpm: r.averageWpm,
-          averageAccuracy: r.averageAccuracy,
-          totalRoundsCompleted: r.totalRoundsCompleted,
-          highestWpm: r.highestWpm,
-          lowestWpm: r.lowestWpm
-        }))
-      }
-    );
-
-    // Update each participant's final data (persist)
-    for (const ranking of finalRankings) {
-      await Competition.findByIdAndUpdate(
-        competitionId,
-        {
-          $set: {
-            'participants.$[elem].finalRank': ranking.rank,
-            'participants.$[elem].totalWpm': ranking.averageWpm,
-            'participants.$[elem].totalAccuracy': ranking.averageAccuracy,
-            'participants.$[elem].roundsCompleted': ranking.totalRoundsCompleted,
-            'participants.$[elem].roundScores': ranking.roundScores
-          }
-        },
-        {
-          arrayFilters: [{ 'elem.name': ranking.participantName }],
-          new: true
-        }
-      );
-    }
-
-    console.log('✓ Competition completed');
-
-    // Emit final results (include totalErrors / totalBackspaces)
-    io.to(`competition_${competitionId}`).emit('finalResults', {
-      rankings: finalRankings.map(r => ({
-        name: r.participantName,
-        avgWpm: r.averageWpm,
-        avgAccuracy: r.averageAccuracy,
-        rank: r.rank,
-        rounds: r.roundScores,
-        totalErrors: r.totalErrors,
-        totalBackspaces: r.totalBackspaces
-      }))
-    });
-
-  } catch (error) {
-    console.error('Final results error:', error);
-  }
-}
-
+// ==========================
+// START SERVER
+// ==========================
 const PORT = process.env.PORT || 3000;
+
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  logger.info(`🚀 Server running on http://localhost:${PORT}`);
+  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

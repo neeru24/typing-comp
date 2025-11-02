@@ -1,23 +1,42 @@
 {
-  "name": "typing-platform-backend",
-  "version": "1.0.0",
-  "description": "College TechFest Typing Competition Platform",
+  "name": "typing-competition-platform",
+  "version": "2.0.0",
+  "description": "Production-ready typing competition platform for techfests with crash recovery and auto-reconnection",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js"
+    "dev": "nodemon app.js",
+    "test": "echo \"No tests yet\" && exit 0"
   },
-  "keywords": ["typing", "competition", "techfest"],
-  "author": "",
+  "keywords": [
+    "typing",
+    "competition",
+    "websocket",
+    "techfest",
+    "socket.io",
+    "mongodb"
+  ],
+  "author": "Saurabh Dev",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
-    "socket.io": "^4.5.4",
-    "mongoose": "^7.0.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.0.3"
+    "socket.io": "^4.6.1",
+    "mongoose": "^8.0.3",
+    "dotenv": "^16.3.1",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "validator": "^13.11.0",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
-    "nodemon": "^2.0.20"
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saurabh-dev-vns/typing-comp.git"
   }
 }

@@ -1,327 +1,324 @@
-const socket = io();
-
+let socket;
 let competitionId = null;
-let rounds = [];
 let competitionCode = null;
-let completedRounds = new Set();
+let currentRound = 0;
+let totalRounds = 0;
+let isPaused = false;
 
 // DOM Elements
-const compNameInput = document.getElementById('compName');
-const compDescriptionInput = document.getElementById('compDescription');
-const addRoundBtn = document.getElementById('addRoundBtn');
-const roundsList = document.getElementById('roundsList');
-const createCompBtn = document.getElementById('createCompBtn');
-const codeDisplay = document.getElementById('codeDisplay');
-const codeValue = document.getElementById('codeValue');
-const roundSelector = document.getElementById('roundSelector');
-const roundButtonsList = document.getElementById('roundButtonsList');
-const startRoundBtn = document.getElementById('startRoundBtn');
-const leaderboardContainer = document.getElementById('leaderboardContainer');
-const roundStatus = document.getElementById('roundStatus');
-const participantCountDisplay = document.getElementById('participantCountDisplay');
-const compInfo = document.getElementById('compInfo');
-const compNameDisplay = document.getElementById('compNameDisplay');
-const statusDisplay = document.getElementById('statusDisplay');
+// Change these lines (around line 9-15):
+const createSection = document.getElementById('setupSection');  // was 'create-section'
+const competitionNameInput = document.getElementById('compName');  // was 'competition-name'
+const roundsContainer = document.getElementById('roundsList');  // was 'rounds-container'
+const addRoundBtn = document.getElementById('addRoundBtn');  // was 'add-round-btn'
+const createCompBtn = document.getElementById('createCompBtn');  // was 'create-competition-btn'
 
-let selectedRound = null;
+const dashboardSection = document.getElementById('dashboard-section');  // Add this
+const competitionCodeDisplay = document.getElementById('codeValue');  // was 'competition-code'
+const participantCountDisplay = document.getElementById('participantCountDisplay');  // was 'participant-count-display'
+const currentRoundDisplay = document.getElementById('current-round-display');  // Add this
+const startRoundBtn = document.getElementById('startRoundBtn');  // was 'start-round-btn'
+const pauseRoundBtn = document.getElementById('pause-round-btn');
+const organizerLeaderboard = document.getElementById('organizer-leaderboard-body');  // Add this
 
-// Add new round
-addRoundBtn.addEventListener('click', () => {
-  const roundIndex = rounds.length;
-  rounds.push({ text: '', duration: 60 });
-  renderRounds();
-});
 
-// Render rounds UI
-function renderRounds() {
-  roundsList.innerHTML = '';
-  
-  rounds.forEach((round, index) => {
-    const roundDiv = document.createElement('div');
-    roundDiv.className = 'round-item';
-    roundDiv.innerHTML = `
-      <div class="round-header">
-        <h4>Round ${index + 1}</h4>
-        <button class="btn-remove" onclick="removeRound(${index})">✕</button>
-      </div>
-      <div class="form-group">
-        <label>Text to Type</label>
-        <textarea placeholder="Enter paragraph..." id="text-${index}" class="round-text">${round.text}</textarea>
-        <span class="char-count">Characters: <span id="count-${index}">0</span></span>
-      </div>
-      <div class="form-group">
-        <label>Duration (seconds)</label>
-        <input type="number" id="duration-${index}" value="${round.duration}" min="10" max="300" />
-      </div>
-    `;
-    roundsList.appendChild(roundDiv);
+let roundCount = 0;
 
-    // Character counter
-    const textarea = document.getElementById(`text-${index}`);
-    textarea.addEventListener('input', function() {
-      document.getElementById(`count-${index}`).textContent = this.value.length;
-    });
-    document.getElementById(`count-${index}`).textContent = round.text.length;
+// ==========================
+// SOCKET CONNECTION WITH RECONNECTION
+// ==========================
+
+function connectSocket() {
+  if (socket && socket.connected) return;
+
+  socket = io({
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: Infinity
+  });
+
+  socket.on('connect', () => {
+    console.log('Organizer socket connected');
+    
+    if (socket.recovered && competitionId) {
+      console.log('Connection recovered');
+      showNotification('Reconnected successfully!', 'success');
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Organizer socket disconnected');
+    showNotification('Connection lost. Reconnecting...', 'warning');
+  });
+
+  socket.io.on('reconnect', () => {
+    showNotification('Reconnected!', 'success');
+  });
+
+  setupSocketListeners();
+}
+
+function setupSocketListeners() {
+  socket.on('participantJoined', ({ name, totalParticipants }) => {
+    participantCountDisplay.textContent = totalParticipants;
+    showNotification(`${name} joined (${totalParticipants} total)`, 'info');
+  });
+
+  socket.on('participantLeft', ({ name, totalParticipants }) => {
+    participantCountDisplay.textContent = totalParticipants;
+    showNotification(`${name} left (${totalParticipants} remaining)`, 'info');
+  });
+
+  socket.on('leaderboardUpdate', ({ round, leaderboard }) => {
+    updateOrganizerLeaderboard(leaderboard);
+  });
+
+  socket.on('roundEnded', ({ roundIndex }) => {
+    currentRound = roundIndex + 1;
+    currentRoundDisplay.textContent = `${currentRound} / ${totalRounds}`;
+    
+    if (currentRound < totalRounds) {
+      startRoundBtn.textContent = 'Start Next Round';
+      startRoundBtn.disabled = false;
+      pauseRoundBtn.disabled = true;
+      pauseRoundBtn.textContent = 'Pause Round';
+      isPaused = false;
+    } else {
+      startRoundBtn.disabled = true;
+      pauseRoundBtn.disabled = true;
+      showNotification('Competition completed!', 'success');
+    }
+  });
+
+  socket.on('error', ({ message }) => {
+    showNotification(message, 'error');
   });
 }
 
-// Remove round
-function removeRound(index) {
-  rounds.splice(index, 1);
-  renderRounds();
-}
+// ==========================
+// CREATE COMPETITION
+// ==========================
 
-// Create competition
-createCompBtn.addEventListener('click', async () => {
-  const compName = compNameInput.value.trim();
-  const compDescription = compDescriptionInput.value.trim();
+addRoundBtn.addEventListener('click', () => {
+  if (roundCount >= 10) {
+    showNotification('Maximum 10 rounds allowed', 'warning');
+    return;
+  }
+
+  roundCount++;
+  const roundDiv = document.createElement('div');
+  roundDiv.className = 'round-input';
+  roundDiv.innerHTML = `
+    <h3>Round ${roundCount}</h3>
+    <label>Text to Type:</label>
+    <textarea class="round-text" rows="3" placeholder="Enter the text participants will type..." required minlength="10" maxlength="5000"></textarea>
+    
+    <label>Duration (seconds):</label>
+    <input type="number" class="round-duration" min="10" max="600" value="60" required>
+    
+    <button class="remove-round-btn" onclick="removeRound(this)">Remove Round</button>
+  `;
   
-  if (!compName) {
-    alert('Please enter competition name');
+  roundsContainer.appendChild(roundDiv);
+});
+
+window.removeRound = function(button) {
+  const roundDiv = button.closest('.round-input');
+  roundDiv.remove();
+  roundCount--;
+  
+  const rounds = document.querySelectorAll('.round-input');
+  rounds.forEach((round, index) => {
+    round.querySelector('h3').textContent = `Round ${index + 1}`;
+  });
+};
+
+createCompBtn.addEventListener('click', async () => {
+  const name = competitionNameInput.value.trim();
+  
+  if (!name || name.length < 3) {
+    showNotification('Competition name must be at least 3 characters', 'error');
     return;
   }
 
-  if (rounds.length === 0) {
-    alert('Please add at least one round');
+  const roundInputs = document.querySelectorAll('.round-input');
+  
+  if (roundInputs.length === 0) {
+    showNotification('Add at least one round', 'error');
     return;
   }
 
-  // Collect updated rounds
-  rounds = rounds.map((round, index) => ({
-    text: document.getElementById(`text-${index}`).value.trim(),
-    duration: parseInt(document.getElementById(`duration-${index}`).value)
-  }));
+  const rounds = [];
+  let isValid = true;
 
-  if (rounds.some(r => !r.text || r.duration < 10)) {
-    alert('All rounds must have text and duration >= 10s');
-    return;
-  }
+  roundInputs.forEach((roundDiv, index) => {
+    const text = roundDiv.querySelector('.round-text').value.trim();
+    const duration = parseInt(roundDiv.querySelector('.round-duration').value);
+
+    if (!text || text.length < 10) {
+      showNotification(`Round ${index + 1}: Text must be at least 10 characters`, 'error');
+      isValid = false;
+      return;
+    }
+
+    if (!duration || duration < 10 || duration > 600) {
+      showNotification(`Round ${index + 1}: Duration must be 10-600 seconds`, 'error');
+      isValid = false;
+      return;
+    }
+
+    rounds.push({ text, duration });
+  });
+
+  if (!isValid) return;
+
+  createCompBtn.disabled = true;
+  createCompBtn.textContent = 'Creating...';
 
   try {
     const response = await fetch('/api/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        name: compName, 
-        description: compDescription,
-        rounds 
-      })
+      body: JSON.stringify({ name, rounds })
     });
 
     const data = await response.json();
 
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to create competition');
+    }
+
     if (data.success) {
       competitionId = data.competitionId;
       competitionCode = data.code;
-      codeValue.textContent = data.code;
+      totalRounds = rounds.length;
 
-      // Transition UI - hide form, show code
-      document.getElementById('setupForm').classList.add('hidden');
-      codeDisplay.classList.remove('hidden');
-      codeDisplay.classList.add('show');
+      connectSocket();
       
-      // Show control panel elements
-      roundSelector.classList.remove('hidden');
-      compInfo.classList.remove('hidden');
-      
-      compNameDisplay.textContent = compName;
-      statusDisplay.textContent = 'Ready';
-
-      // Render round buttons
-      renderRoundButtons();
-
-      socket.emit('organizerJoin', {
-        competitionId,
-        code: data.code
+      socket.emit('join', {
+        code: data.code,
+        participantName: '__ORGANIZER__'
       });
-    } else {
-      alert('Failed to create competition');
+
+      createSection.style.display = 'none';
+      dashboardSection.style.display = 'flex';
+
+      competitionCodeDisplay.textContent = data.code;
+      currentRoundDisplay.textContent = `0 / ${totalRounds}`;
+      participantCountDisplay.textContent = '0';
+
+      showNotification(`Competition created! Code: ${data.code}`, 'success');
+      
+      navigator.clipboard.writeText(data.code).catch(() => {});
     }
   } catch (error) {
-    console.error('Error:', error);
-    alert('Connection error');
+    showNotification(error.message, 'error');
+    createCompBtn.disabled = false;
+    createCompBtn.textContent = 'Create Competition';
   }
 });
 
-// Render round buttons with status
-function renderRoundButtons() {
-  roundButtonsList.innerHTML = '';
-  rounds.forEach((round, index) => {
-    const isCompleted = completedRounds.has(index);
-    const btn = document.createElement('button');
-    btn.className = `round-btn ${isCompleted ? 'completed' : ''}`;
-    btn.textContent = `Round ${index + 1}`;
-    btn.disabled = isCompleted;
-    btn.style.opacity = isCompleted ? '0.5' : '1';
-    btn.style.cursor = isCompleted ? 'not-allowed' : 'pointer';
-    
-    btn.addEventListener('click', () => {
-      selectedRound = index;
-      
-      // Remove previous selection
-      document.querySelectorAll('.round-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      
-      // Update round details
-      document.getElementById('selectedRoundText').textContent = 
-        `📄 ${round.text.substring(0, 100)}...`;
-      document.getElementById('selectedRoundTime').textContent = 
-        `⏱️ Duration: ${round.duration} seconds`;
-      
-      startRoundBtn.disabled = isCompleted;
-    });
+// ==========================
+// START ROUND
+// ==========================
 
-    if (index === 0) {
-      btn.classList.add('active');
-      selectedRound = 0;
-      document.getElementById('selectedRoundText').textContent = 
-        `📄 ${round.text.substring(0, 100)}...`;
-      document.getElementById('selectedRoundTime').textContent = 
-        `⏱️ Duration: ${round.duration} seconds`;
-      startRoundBtn.disabled = false;
-    }
-
-    roundButtonsList.appendChild(btn);
-  });
-}
-
-// Start round
 startRoundBtn.addEventListener('click', () => {
-  if (selectedRound === null || selectedRound === undefined) {
-    alert('Select a round first');
-    return;
+  if (!competitionId) return;
+
+  if (parseInt(participantCountDisplay.textContent) === 0) {
+    if (!confirm('No participants have joined yet. Start anyway?')) {
+      return;
+    }
   }
 
-  if (completedRounds.has(selectedRound)) {
-    alert('This round has already been completed');
-    return;
-  }
+  startRoundBtn.disabled = true;
+  startRoundBtn.textContent = 'Starting...';
 
   socket.emit('startRound', {
     competitionId,
-    roundIndex: selectedRound
+    roundIndex: currentRound
   });
 
-  startRoundBtn.disabled = true;
-  showRoundStatus(selectedRound);
-});
-
-// Show round status
-function showRoundStatus(roundIndex) {
-  roundStatus.classList.remove('hidden');
-  document.getElementById('roundNumber').textContent = roundIndex + 1;
-
-  const duration = rounds[roundIndex].duration;
-  let timeLeft = duration;
-
-  const timerInterval = setInterval(() => {
-    timeLeft--;
-    document.getElementById('roundTimer').textContent = timeLeft;
-    
-    const progress = ((duration - timeLeft) / duration) * 100;
-    document.getElementById('progressFill').style.width = progress + '%';
-
-    if (timeLeft <= 0) {
-      clearInterval(timerInterval);
-      roundStatus.classList.add('hidden');
-      
-      // Mark round as completed
-      completedRounds.add(roundIndex);
-      
-      // Disable the round button
-      const roundButtons = document.querySelectorAll('.round-btn');
-      if (roundButtons[roundIndex]) {
-        roundButtons[roundIndex].disabled = true;
-        roundButtons[roundIndex].classList.add('completed');
-        roundButtons[roundIndex].style.opacity = '0.5';
-        roundButtons[roundIndex].style.cursor = 'not-allowed';
-      }
-      
-      // Disable start button if this round was selected
-      if (selectedRound === roundIndex) {
-        startRoundBtn.disabled = true;
-      }
-    }
+  setTimeout(() => {
+    startRoundBtn.textContent = 'Round Started';
+    pauseRoundBtn.disabled = false;
   }, 1000);
+});
+
+// ==========================
+// PAUSE/RESUME ROUND
+// ==========================
+
+pauseRoundBtn.addEventListener('click', () => {
+  if (!competitionId) return;
+
+  if (!isPaused) {
+    socket.emit('pauseRound', { competitionId });
+    pauseRoundBtn.textContent = 'Resume Round';
+    isPaused = true;
+    showNotification('Round paused', 'warning');
+  } else {
+    socket.emit('resumeRound', { competitionId });
+    pauseRoundBtn.textContent = 'Pause Round';
+    isPaused = false;
+    showNotification('Round resumed', 'success');
+  }
+});
+
+// ==========================
+// LEADERBOARD
+// ==========================
+
+function updateOrganizerLeaderboard(leaderboard) {
+  organizerLeaderboard.innerHTML = '';
+
+  leaderboard.forEach((entry, index) => {
+    const row = document.createElement('tr');
+    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+    
+    const suspiciousWPM = entry.wpm > 200 ? ' ⚠️' : '';
+    
+    row.innerHTML = `
+      <td>${index + 1}${medal}</td>
+      <td>${entry.name}</td>
+      <td>${entry.wpm}${suspiciousWPM}</td>
+      <td>${entry.accuracy}%</td>
+    `;
+    
+    if (entry.wpm > 200) {
+      row.style.background = 'rgba(255, 152, 0, 0.1)';
+    }
+    
+    organizerLeaderboard.appendChild(row);
+  });
 }
 
-// Copy code to clipboard
-function copyCode() {
-  navigator.clipboard.writeText(competitionCode);
-  alert('✓ Code copied: ' + competitionCode);
+// ==========================
+// UTILITIES
+// ==========================
+
+function showNotification(message, type = 'info') {
+  const notification = document.createElement('div');
+  notification.className = `notification notification-${type}`;
+  notification.textContent = message;
+  
+  document.body.appendChild(notification);
+  
+  setTimeout(() => notification.classList.add('show'), 10);
+  
+  setTimeout(() => {
+    notification.classList.remove('show');
+    setTimeout(() => notification.remove(), 300);
+  }, 4000);
 }
 
-// Socket events
-socket.on('participantJoined', (data) => {
-  participantCountDisplay.textContent = data.totalParticipants;
-  console.log(`✓ ${data.name} joined`);
+document.addEventListener('click', (e) => {
+  if (e.target.id === 'copy-code-btn') {
+    navigator.clipboard.writeText(competitionCode)
+      .then(() => showNotification('Code copied to clipboard!', 'success'))
+      .catch(() => showNotification('Failed to copy code', 'error'));
+  }
 });
 
-socket.on('leaderboardUpdate', (data) => {
-  const leaderboard = data.leaderboard;
-  leaderboardContainer.innerHTML = `
-    <h4>🏁 Live Round ${data.roundIndex + 1}</h4>
-    ${leaderboard.map((item, index) => `
-      <div class="leaderboard-item top-${index < 3 ? index + 1 : ''}">
-        <span class="leaderboard-rank">#${index + 1}</span>
-        <span class="leaderboard-name">${item.name}</span>
-        <span class="leaderboard-stats">
-          <span>🏃 ${item.wpm} WPM</span>
-          <span>🎯 ${item.accuracy}%</span>
-          <span class="text-red">❌ ${item.errors ?? 0}</span>
-          <span class="text-yellow">⌫ ${item.backspaces ?? 0}</span>
-        </span>
-      </div>
-    `).join('')}
-  `;
-});
-
-socket.on('roundEnded', (data) => {
-  leaderboardContainer.innerHTML = `
-    <h4>✅ Round ${data.roundIndex + 1} - Final Results</h4>
-    ${data.leaderboard.map((item, index) => `
-      <div class="leaderboard-item top-${index < 3 ? index + 1 : ''}">
-        <span class="leaderboard-rank">#${index + 1}</span>
-        <span class="leaderboard-name">${item.name}</span>
-        <span class="leaderboard-stats">
-          <span>🏃 ${item.wpm} WPM</span>
-          <span>🎯 ${item.accuracy}%</span>
-          <span class="text-red">❌ ${item.errors ?? 0}</span>
-          <span class="text-yellow">⌫ ${item.backspaces ?? 0}</span>
-        </span>
-      </div>
-    `).join('')}
-  `;
-});
-
-socket.on('finalResults', (data) => {
-  console.log('Final Results:', data.rankings);
-  leaderboardContainer.innerHTML = `
-    <h4>🏆 Final Rankings 🏆</h4>
-    ${data.rankings.map((item, index) => {
-      const medals = ['🥇', '🥈', '🥉'];
-      const medal = medals[index] || `#${index + 1}`;
-      return `
-        <div class="leaderboard-item final-rank">
-          <span class="medal">${medal}</span>
-          <span class="leaderboard-name">${item.name}</span>
-          <span class="leaderboard-stats">
-            <span>Avg: ${item.avgWpm} WPM</span>
-            <span>🎯 ${item.avgAccuracy}%</span>
-            <span class="text-red">❌ ${item.totalErrors ?? 0}</span>
-            <span class="text-yellow">⌫ ${item.totalBackspaces ?? 0}</span>
-          </span>
-        </div>
-      `;
-    }).join('')}
-  `;
-});
-
-socket.on('error', (data) => {
-  console.error('Error:', data.message);
-  alert('⚠️ Error: ' + data.message);
-});
-
-socket.on('disconnect', () => {
-  console.log('Disconnected from server');
-});
+connectSocket();
