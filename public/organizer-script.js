@@ -4,8 +4,9 @@ let competitionCode = null;
 let currentRound = 0;
 let totalRounds = 0;
 let isPaused = false;
+let roundsData = []; // Store round data
 
-// DOM Elements - TUMHARE EXACT IDs
+// DOM Elements
 const createSection = document.getElementById('setupSection');
 const competitionNameInput = document.getElementById('compName');
 const roundsContainer = document.getElementById('roundsList');
@@ -19,8 +20,12 @@ const currentRoundDisplay = document.getElementById('current-round-display');
 const startRoundBtn = document.getElementById('startRoundBtn');
 const pauseRoundBtn = document.getElementById('pause-round-btn');
 const organizerLeaderboard = document.getElementById('organizer-leaderboard-body');
+const roundButtonsList = document.querySelector('.round-list-control') || 
+                         document.createElement('div');
+const selectedRoundText = document.getElementById('selectedRoundText');
 
-let roundCount = 1; // Fixed: 0 se 1 kiya
+let roundCount = 1;
+let selectedRound = 0;
 
 // Socket Connection
 function connectSocket() {
@@ -58,6 +63,7 @@ function setupSocketListeners() {
   socket.on('participantJoined', ({ name, totalParticipants }) => {
     if (participantCountDisplay) {
       participantCountDisplay.textContent = totalParticipants;
+      animateCount(participantCountDisplay);
     }
     showNotification(`${name} joined (${totalParticipants} total)`, 'info');
   });
@@ -231,6 +237,7 @@ if (createCompBtn) {
         competitionId = data.competitionId;
         competitionCode = data.code;
         totalRounds = rounds.length;
+        roundsData = rounds; // Store rounds data
 
         if (!socket || !socket.connected) {
           connectSocket();
@@ -244,12 +251,20 @@ if (createCompBtn) {
           });
         }
 
+        // Hide setup, Show dashboard
         if (createSection) createSection.style.display = 'none';
         if (dashboardSection) dashboardSection.style.display = 'block';
 
+        // Update dashboard values
         if (competitionCodeDisplay) competitionCodeDisplay.textContent = data.code;
         if (currentRoundDisplay) currentRoundDisplay.textContent = `0 / ${totalRounds}`;
         if (participantCountDisplay) participantCountDisplay.textContent = '0';
+        if (document.getElementById('compNameDisplay')) {
+          document.getElementById('compNameDisplay').textContent = name;
+        }
+
+        // ✅ Create round buttons
+        createRoundButtons();
 
         showNotification(`✅ Created! Code: ${data.code}`, 'success');
         
@@ -264,6 +279,53 @@ if (createCompBtn) {
       createCompBtn.textContent = 'Create Competition';
     }
   });
+}
+
+// ✅ Create Round Buttons
+function createRoundButtons() {
+  const container = document.querySelector('.round-list-control');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  roundsData.forEach((round, index) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `round-btn ${index === 0 ? 'active' : ''}`;
+    btn.textContent = `Round ${index + 1}`;
+    btn.dataset.roundIndex = index;
+    
+    btn.addEventListener('click', () => {
+      // Remove active from all
+      document.querySelectorAll('.round-btn').forEach(b => {
+        b.classList.remove('active');
+      });
+      
+      // Add active to clicked
+      btn.classList.add('active');
+      selectedRound = index;
+      
+      // Update display
+      if (selectedRoundText) {
+        selectedRoundText.textContent = `${round.text.substring(0, 100)}${round.text.length > 100 ? '...' : ''}`;
+      }
+      
+      // Enable start button
+      if (startRoundBtn) {
+        startRoundBtn.disabled = false;
+      }
+    });
+    
+    container.appendChild(btn);
+  });
+
+  // Select first round by default
+  if (roundsData.length > 0) {
+    const firstBtn = container.querySelector('.round-btn');
+    if (firstBtn) {
+      firstBtn.click();
+    }
+  }
 }
 
 // Start Round
@@ -285,12 +347,12 @@ if (startRoundBtn) {
     startRoundBtn.disabled = true;
     startRoundBtn.textContent = 'Starting...';
 
-    socket.emit('startRound', { competitionId, roundIndex: currentRound });
+    socket.emit('startRound', { competitionId, roundIndex: selectedRound });
 
     setTimeout(() => {
       startRoundBtn.textContent = 'Round In Progress...';
       if (pauseRoundBtn) pauseRoundBtn.disabled = false;
-      showNotification(`Round ${currentRound + 1} started!`, 'success');
+      showNotification(`Round ${selectedRound + 1} started!`, 'success');
     }, 500);
   });
 }
@@ -366,6 +428,14 @@ function escapeHtml(unsafe) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function animateCount(element) {
+  element.style.transform = 'scale(1.2)';
+  element.style.transition = 'transform 0.3s ease';
+  setTimeout(() => {
+    element.style.transform = 'scale(1)';
+  }, 300);
 }
 
 // Copy code button

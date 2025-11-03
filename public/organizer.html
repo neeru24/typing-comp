@@ -1,145 +1,127 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TechFest Typing - Organizer</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body class="dark-theme">
-    <div class="container">
-      <!-- HEADER -->
-      <header class="header">
-        <h1>⚡ TechFest Typing Battle</h1>
-        <span class="role-badge">ORGANIZER</span>
-      </header>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TechFest Typing - Organizer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="dark-theme">
+  <div class="container">
+    <header class="header">
+      <h1>⚡ TechFest Typing Battle</h1>
+      <span class="role-badge">ORGANIZER</span>
+    </header>
 
-      <!-- MAIN LAYOUT -->
-      <main class="organizer-layout">
-        <!-- LEFT: Setup Section -->
-        <section class="section setup-section" id="setupSection">
-          <h2>📝 Create Competition</h2>
+    <main class="organizer-layout">
+      
+      <!-- LEFT: SETUP SECTION (Hidden after creation) -->
+      <section class="section setup-section" id="setupSection">
+        <h2>📝 Create Competition</h2>
 
-          <!-- FORM CONTAINER (will be hidden after creation) -->
-          <div id="setupForm" class="setup-form">
-            <div class="form-group">
-              <label for="compName">Competition Name</label>
-              <input
-                type="text"
-                id="compName"
-                placeholder="e.g., TechFest 2025"
-                required
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="compDescription">Description (Optional)</label>
-              <input
-                type="text"
-                id="compDescription"
-                placeholder="e.g., College typing speed contest"
-              />
-            </div>
-
-            <!-- ROUNDS SECTION -->
-            <div class="rounds-container">
-              <h3>🎯 Rounds</h3>
-              <div id="roundsList" class="rounds-list"></div>
-              <button type="button" class="btn-secondary" id="addRoundBtn">
-                + Add Round
-              </button>
-            </div>
-
-            <button type="button" class="btn-primary" id="createCompBtn">
-              Create Competition
-            </button>
+        <div id="setupForm" class="setup-form">
+          <div class="form-group">
+            <label for="compName">Competition Name</label>
+            <input type="text" id="compName" placeholder="e.g., TechFest 2025" required />
           </div>
 
-          <!-- CODE DISPLAY (shown after creation) -->
-          <div id="codeDisplay" class="code-display hidden">
-            <h3>✓ Competition Created!</h3>
-            <p>Share this code with participants:</p>
-            <div class="code-box">
-              <span id="codeValue" class="code-big"></span>
-              <button type="button" class="btn-copy" onclick="copyCode()">
-                📋 Copy
-              </button>
-            </div>
-            <p id="participantCount" class="participant-count">
-              ⏳ Waiting for participants...
-            </p>
-          </div>
-        </section>
-
-        <!-- RIGHT: Control & Leaderboard Section -->
-        <section class="section control-section">
-          <h2>👥 Control Panel</h2>
-
-          <!-- COMPETITION INFO -->
-          <div id="compInfo" class="comp-info hidden">
-            <div class="info-box">
-              <label>Competition:</label>
-              <span id="compNameDisplay">-</span>
-            </div>
-            <div class="info-box">
-              <label>Participants:</label>
-              <span id="participantCountDisplay">0</span>
-            </div>
-            <div class="info-box">
-              <label>Status:</label>
-              <span id="statusDisplay" class="status-badge">Pending</span>
-            </div>
+          <div class="form-group">
+            <label for="compDescription">Description (Optional)</label>
+            <input type="text" id="compDescription" placeholder="e.g., College typing contest" />
           </div>
 
-          <!-- ROUND SELECTOR -->
-          <div id="roundSelector" class="round-selector hidden">
-            <h3>🎮 Manage Rounds</h3>
+          <!-- ROUNDS SECTION -->
+          <div class="rounds-container">
+            <h3>🎯 Rounds</h3>
+            <div id="roundsList" class="rounds-list"></div>
+            <button type="button" class="btn-primary" id="addRoundBtn">+ Add Round</button>
+          </div>
 
-            <div class="round-list-control">
-              <div id="roundButtonsList"></div>
-            </div>
+          <button type="button" class="btn-primary" id="createCompBtn">Create Competition</button>
+        </div>
+      </section>
 
-            <div class="round-details">
-              <p id="selectedRoundText" class="round-text-preview">
-                Select a round to view details
-              </p>
-              <p id="selectedRoundTime" class="round-time"></p>
-            </div>
+      <!-- RIGHT: DASHBOARD SECTION (Shown after creation) -->
+      <section class="section control-section" id="dashboard-section" style="display: none;">
+        <h2>👥 Control Panel</h2>
 
-            <button
-              type="button"
-              class="btn-primary"
-              id="startRoundBtn"
-              disabled
-            >
-              Start Selected Round
-            </button>
-<button id="pause-round-btn" disabled>Pause Round</button>
+        <!-- CODE DISPLAY -->
+        <div class="code-display">
+          <h3>✓ Competition Created!</h3>
+          <p>Share this code with participants:</p>
+          <div class="code-box">
+            <span id="codeValue" class="code-big">------</span>
+            <button type="button" class="btn-copy" id="copy-code-btn">📋 Copy</button>
+          </div>
+          <p id="participantCount" class="participant-count">⏳ Waiting for participants...</p>
+        </div>
 
-            <!-- ROUND STATUS -->
-            <div id="roundStatus" class="round-status hidden">
-              <div class="status-content">
-                <p>Round <span id="roundNumber">-</span> In Progress</p>
-                <p class="timer">⏱️ <span id="roundTimer">0</span>s</p>
-                <div class="progress-bar">
-                  <div id="progressFill"></div>
-                </div>
+        <!-- COMPETITION INFO -->
+        <div id="compInfo" class="comp-info">
+          <div class="info-box">
+            <label>Competition:</label>
+            <span id="compNameDisplay">-</span>
+          </div>
+          <div class="info-box">
+            <label>Participants:</label>
+            <span id="participantCountDisplay">0</span>
+          </div>
+          <div class="info-box">
+            <label>Current Round:</label>
+            <span id="current-round-display">0 / 0</span>
+          </div>
+        </div>
+
+        <!-- ROUND CONTROLS -->
+        <div class="round-selector">
+          <h3>🎮 Manage Rounds</h3>
+          
+          <div class="round-details">
+            <p id="selectedRoundText" class="round-text-preview">Select a round to view details</p>
+          </div>
+
+          <button type="button" class="btn-primary" id="startRoundBtn" disabled>Start Selected Round</button>
+          <button type="button" class="btn-secondary" id="pause-round-btn" disabled>Pause Round</button>
+
+          <!-- ROUND STATUS -->
+          <div id="roundStatus" class="round-status" style="display: none;">
+            <div class="status-content">
+              <p>Round <span id="roundNumber">-</span> In Progress</p>
+              <p class="timer">⏱️ <span id="roundTimer">0</span>s</p>
+              <div class="progress-bar">
+                <div id="progressFill"></div>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- LIVE LEADERBOARD -->
-          <div class="leaderboard-section">
-            <h3>📊 Live Leaderboard</h3>
-            <div id="leaderboardContainer" class="leaderboard-container">
-              <p class="placeholder-text">Awaiting round start...</p>
-            </div>
+        <!-- LIVE LEADERBOARD -->
+        <div class="leaderboard-section">
+          <h3>📊 Live Leaderboard</h3>
+          <div class="leaderboard-container">
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Name</th>
+                  <th>WPM</th>
+                  <th>Accuracy</th>
+                </tr>
+              </thead>
+              <tbody id="organizer-leaderboard-body">
+                <tr>
+                  <td colspan="4" style="text-align: center; padding: 20px;">Awaiting round start...</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </section>
-      </main>
-    </div>
+        </div>
+      </section>
 
-    <script src="https://cdn.socket.io/4.5.4/socket.io.js"></script>
-    <script src="organizer-script.js"></script>
-  </body>
+    </main>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="organizer-script.js"></script>
+</body>
 </html>
