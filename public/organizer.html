@@ -1,144 +1,189 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TechFest Typing - Organizer</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body class="dark-theme">
-    <div class="container">
-      <!-- HEADER -->
-      <header class="header">
-        <h1>⚡ TechFest Typing Battle</h1>
-        <span class="role-badge">ORGANIZER</span>
-      </header>
+<html>
+<head>
+  <title>Organizer Panel</title>
+  <style>
+    body { font-family: Arial; margin: 20px; background: #111; color: #fff; }
+    input, button { padding: 8px; margin: 6px 0; }
+    .box { border: 1px solid #444; padding: 12px; margin-top: 20px; }
+    .round-item { padding: 5px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { text-align: center; }
 
-      <!-- MAIN LAYOUT -->
-      <main class="organizer-layout">
-        <!-- LEFT: Setup Section -->
-        <section class="section setup-section" id="setupSection">
-          <h2>📝 Create Competition</h2>
+  </style>
+</head>
+<body>
+<h2>Organizer Panel</h2>
 
-          <!-- FORM CONTAINER (will be hidden after creation) -->
-          <div id="setupForm" class="setup-form">
-            <div class="form-group">
-              <label for="compName">Competition Name</label>
-              <input
-                type="text"
-                id="compName"
-                placeholder="e.g., TechFest 2025"
-                required
-              />
-            </div>
+<div>
+  <label>Your Name:</label>
+  <input id="organizerName">
+  <button onclick="createRoom()">Create Room</button>
+</div>
 
-            <div class="form-group">
-              <label for="compDescription">Description (Optional)</label>
-              <input
-                type="text"
-                id="compDescription"
-                placeholder="e.g., College typing speed contest"
-              />
-            </div>
+<div class="box" id="roomInfo" style="display:none;">
+  <p>Room Code: <b id="roomCode"></b></p>
 
-            <!-- ROUNDS SECTION -->
-            <div class="rounds-container">
-              <h3>🎯 Rounds</h3>
-              <div id="roundsList" class="rounds-list"></div>
-              <button type="button" class="btn-secondary" id="addRoundBtn">
-                + Add Round
-              </button>
-            </div>
+  <h3>Add Round</h3>
+  <textarea id="roundText" rows="4" cols="40" placeholder="Custom text here..."></textarea><br>
+  <input id="duration" type="number" placeholder="Duration Seconds">
+  <button onclick="addRound()">Add Round</button>
 
-            <button type="button" class="btn-primary" id="createCompBtn">
-              Create Competition
-            </button>
-          </div>
+  <h3>Rounds</h3>
+  <div id="roundList"></div>
 
-          <!-- CODE DISPLAY (shown after creation) -->
-          <div id="codeDisplay" class="code-display hidden">
-            <h3>✓ Competition Created!</h3>
-            <p>Share this code with participants:</p>
-            <div class="code-box">
-              <span id="codeValue" class="code-big"></span>
-              <button type="button" class="btn-copy" onclick="copyCode()">
-                📋 Copy
-              </button>
-            </div>
-            <p id="participantCount" class="participant-count">
-              ⏳ Waiting for participants...
-            </p>
-          </div>
-        </section>
+  <h3>Participants Live</h3>
+  <div id="participantsList"></div>
+</div>
+<h3>Live Leaderboard</h3>
+<h3>Round Timer: <span id="timer">--</span> sec</h3>
 
-        <!-- RIGHT: Control & Leaderboard Section -->
-        <section class="section control-section">
-          <h2>👥 Control Panel</h2>
+<table id="leaderboard" border="1" cellpadding="6">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>WPM</th>
+      <th>Accuracy</th>
+      <th>Backspaces</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
 
-          <!-- COMPETITION INFO -->
-          <div id="compInfo" class="comp-info hidden">
-            <div class="info-box">
-              <label>Competition:</label>
-              <span id="compNameDisplay">-</span>
-            </div>
-            <div class="info-box">
-              <label>Participants:</label>
-              <span id="participantCountDisplay">0</span>
-            </div>
-            <div class="info-box">
-              <label>Status:</label>
-              <span id="statusDisplay" class="status-badge">Pending</span>
-            </div>
-          </div>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const socket = io("http://localhost:4000"); // ✅ required connection
 
-          <!-- ROUND SELECTOR -->
-          <div id="roundSelector" class="round-selector hidden">
-            <h3>🎮 Manage Rounds</h3>
+let roomCode = "";
+let roomId = "";
+let rounds = [];
+let participantStats = {}; // store live stats keyed by participantId
+let timerInterval;
 
-            <div class="round-list-control">
-              <div id="roundButtonsList"></div>
-            </div>
+/* ---------------- CREATE ROOM ---------------- */
+async function createRoom() {
+  const res = await fetch("/api/create-room", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ organizerName: organizerName.value })
+  });
+  const data = await res.json();
+  roomCode = data.roomCode;
+  roomId = data.roomId;
 
-            <div class="round-details">
-              <p id="selectedRoundText" class="round-text-preview">
-                Select a round to view details
-              </p>
-              <p id="selectedRoundTime" class="round-time"></p>
-            </div>
+  document.getElementById("roomCode").textContent = roomCode;
+  document.getElementById("roomInfo").style.display = "block";
 
-            <button
-              type="button"
-              class="btn-primary"
-              id="startRoundBtn"
-              disabled
-            >
-              Start Selected Round
-            </button>
+  socket.emit("joinRoom", { roomCode, participantId: "organizer" });
+}
 
-            <!-- ROUND STATUS -->
-            <div id="roundStatus" class="round-status hidden">
-              <div class="status-content">
-                <p>Round <span id="roundNumber">-</span> In Progress</p>
-                <p class="timer">⏱️ <span id="roundTimer">0</span>s</p>
-                <div class="progress-bar">
-                  <div id="progressFill"></div>
-                </div>
-              </div>
-            </div>
-          </div>
+/* ---------------- ADD ROUND ---------------- */
+async function addRound() {
+  const res = await fetch("/api/add-round", {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      roomId,
+      customText: roundText.value,
+      durationSeconds: duration.value,
+      roundNumber: rounds.length + 1
+    })
+  });
+  const newRound = await res.json();
+  rounds.push(newRound);
+  updateRoundList();
+}
 
-          <!-- LIVE LEADERBOARD -->
-          <div class="leaderboard-section">
-            <h3>📊 Live Leaderboard</h3>
-            <div id="leaderboardContainer" class="leaderboard-container">
-              <p class="placeholder-text">Awaiting round start...</p>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
+/* ---------------- DISPLAY ROUNDS ---------------- */
+function updateRoundList() {
+  roundList.innerHTML = "";
+  rounds.forEach((r, i) => {
+    roundList.innerHTML += `
+      <div class="round-item">
+        Round ${i+1} 
+        <button onclick="startRound(${i+1})">Start Round</button>
+      </div>`;
+  });
+}
 
-    <script src="https://cdn.socket.io/4.5.4/socket.io.js"></script>
-    <script src="organizer-script.js"></script>
-  </body>
+/* ---------------- START ROUND ---------------- */
+function startRound(roundNumber) {
+  const round = rounds[roundNumber - 1];
+  socket.emit("startRound", { 
+    roomCode, 
+    roundNumber,
+    duration: round.durationSeconds 
+  });
+}
+
+/* ---------------- LIVE TIMER UI ---------------- */
+socket.on("roundStarted", ({ roundNumber, duration }) => {
+  let timeLeft = duration;
+  document.getElementById("timer").textContent = timeLeft;
+
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    document.getElementById("timer").textContent = timeLeft;
+
+    if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      socket.emit("endRound", { roomCode });
+    }
+  }, 1000);
+});
+
+socket.on("roundEnded", () => {
+  document.getElementById("timer").textContent = "Finished";
+});
+
+/* ---------------- LIVE PARTICIPANT JOIN ---------------- */
+socket.on("participantJoined", (p) => {
+  participantsList.innerHTML += `<div data-id="${p.id}">${p.name}</div>`;
+});
+
+/* ---------------- LIVE SCORE STREAM ---------------- */
+socket.on("liveUpdate", async (data) => {
+  const { participantId, correctChars, incorrectChars, backspaceCount } = data;
+
+  const totalTyped = correctChars + incorrectChars;
+  const wpm = Math.round((totalTyped / 5));
+  const accuracy = totalTyped > 0 
+    ? Math.round((correctChars / totalTyped) * 100)
+    : 100;
+
+  participantStats[participantId] = {
+    name: getParticipantName(participantId),
+    wpm,
+    accuracy,
+    backspace: backspaceCount
+  };
+
+  renderLeaderboard();
+});
+
+function getParticipantName(id) {
+  const el = document.querySelector(`[data-id="${id}"]`);
+  return el ? el.textContent : "Player";
+}
+
+function renderLeaderboard() {
+  const tbody = document.querySelector("#leaderboard tbody");
+  tbody.innerHTML = "";
+
+  const sorted = Object.values(participantStats).sort((a, b) => b.wpm - a.wpm);
+
+  sorted.forEach(s => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${s.name}</td>
+        <td>${s.wpm}</td>
+        <td>${s.accuracy}%</td>
+        <td>${s.backspace}</td>
+      </tr>`;
+  });
+}
+</script>
+
+</body>
 </html>

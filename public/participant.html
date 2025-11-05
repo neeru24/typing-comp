@@ -1,132 +1,147 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TechFest Typing - Participant</title>
-  <link rel="stylesheet" href="styles.css" />
+  <title>Typing Test</title>
+  <style>
+    body { font-family: Arial; background: #111; color: #fff; padding: 20px; }
+    input, button { padding: 8px; margin: 6px 0; }
+    #textDisplay { margin-top: 20px; font-size: 22px; line-height: 35px; }
+    #textDisplay span.correct { color: #4caf50; }
+    #textDisplay span.incorrect { color: #f44336; }
+    #timer { font-size: 22px; margin-top: 15px; }
+  </style>
 </head>
+<body>
 
-<body class="dark-theme">
-  <div class="container">
-    <header class="header">
-      <h1>⚡ TechFest Typing Battle</h1>
-      <span class="role-badge">PARTICIPANT</span>
-    </header>
+<h2>Join Room</h2>
+<input id="name" placeholder="Your Name">
+<input id="roomCode" placeholder="Room Code">
+<button onclick="joinRoom()">Join</button>
 
-    <!-- JOIN SCREEN -->
-    <section id="joinScreen" class="center-screen">
-      <div class="join-card">
-        <h2>Join Competition</h2>
-        <form id="joinForm" onsubmit="return false;">
-          <div class="form-group">
-            <label for="competitionCode">Competition Code</label>
-            <input type="text" id="competitionCode" placeholder="Enter 5-letter code" maxlength="5" required
-              autocomplete="off" />
-          </div>
-          <div class="form-group">
-            <label for="participantName">Your Name</label>
-            <input type="text" id="participantName" placeholder="Enter your name" required autocomplete="off" />
-          </div>
-          <button type="button" class="btn-primary" id="joinBtn">
-            Join Competition
-          </button>
-        </form>
-        <div id="joinError" class="error-message"></div>
-      </div>
-    </section>
+<div id="testArea" style="display:none;">
+  <h3>Round Running...</h3>
+  <h3>Time Left: <span id="timer">--</span> sec</h3>
+  <div id="textDisplay"></div>
+</div>
 
-    <!-- LOBBY SCREEN -->
-    <section id="lobbyScreen" class="center-screen hidden">
-      <div class="lobby-card">
-        <h2>Welcome, <span id="welcomeName">Participant</span>!</h2>
-        <p class="competition-name" id="competitionName">Loading...</p>
-        <div class="participants-count">
-          <p>
-            Participants Ready:
-            <strong id="participantCountDisplay">0</strong>
-          </p>
-        </div>
-        <div class="waiting-animation">
-          <div class="spinner"></div>
-        </div>
-        <p class="waiting-text">
-          ⏳ Waiting for organizer to start Round 1...
-        </p>
-      </div>
-    </section>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const socket = io("http://localhost:4000");
 
-    <!-- TYPING TEST SCREEN -->
-    <section id="testScreen" class="test-screen-improved hidden">
-      <!-- STATS BAR -->
-      <div class="stats-bar-improved">
-        <div class="stat-box">
-          <span class="stat-label">WPM</span>
-          <span class="stat-value" id="wpmDisplay">0</span>
-        </div>
+let participantId = localStorage.getItem("participantId");
+let roundText = "";
+let progressIndex = 0;
+let correctChars = 0;
+let incorrectChars = 0;
+let backspaceCount = 0;
+let typingEnabled = false;
 
-        <div class="stat-box">
-          <span class="stat-label">Accuracy</span>
-          <span class="stat-value" id="accuracyDisplay">100%</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-label">Time</span>
-          <span class="stat-value" id="timerDisplay">0s</span>
-        </div>
-      </div>
+/* ---------------- JOIN ROOM ---------------- */
+async function joinRoom() {
+  const res = await fetch("/api/join-room", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ name: name.value, roomCode: roomCode.value })
+  });
 
-      <!-- TYPING AREA - CENTERED AND IMPROVED -->
-      <div class="typing-container-improved">
-        <div class="text-display-improved" id="textDisplay">
-          <p class="loading-text">Loading text...</p>
-        </div>
-        <input type="text" id="typingInput" class="typing-input-improved" placeholder="Click here to start typing..."
-          autocomplete="off" spellcheck="false" />
-        <p class="focus-warning hidden" id="focusWarning">
-          ⚠️ Tab switch detected! Return to continue.
-        </p>
-      </div>
-    </section>
+  const data = await res.json();
+  participantId = data.participantId;
+  localStorage.setItem("participantId", participantId);
 
-    <!-- RESULTS SCREEN -->
-    <section id="resultsScreen" class="center-screen hidden">
-      <div class="results-card">
-        <h2>Round Complete! 🎉</h2>
-        <div class="personal-results">
-          <div class="result-item">
-            <span>Your WPM:</span>
-            <strong id="resultWpm">0</strong>
-          </div>
-          <div class="result-item">
-            <span>Your Accuracy:</span>
-            <strong id="resultAccuracy">0%</strong>
-          </div>
-        </div>
-        <!-- <div class="results-leaderboard">
-          <h3>Round Leaderboard</h3>
-          <div id="roundLeaderboard"></div>
-        </div> -->
-        <p id="nextRoundText" class="next-round-text">
-          ⏳ Waiting for next round...
-        </p>
-      </div>
-    </section>
+  socket.emit("joinRoom", { roomCode: roomCode.value, participantId });
+}
 
-    <!-- FINAL RESULTS SCREEN -->
-    <section id="finalScreen" class="center-screen hidden">
-      <div class="final-card">
-        <h2>🏆 Final Rankings 🏆</h2>
-        <div id="finalRankings"></div>
-        <button type="button" class="btn-primary" onclick="location.reload()">
-          Start New Competition
-        </button>
-      </div>
-    </section>
-  </div>
+/* ---------------- START ROUND EVENT ---------------- */
+socket.on("roundStarted", async ({ roundNumber, duration }) => {
+  typingEnabled = true;
+  progressIndex = 0;
+  correctChars = 0;
+  incorrectChars = 0;
+  backspaceCount = 0;
 
-  <script src="https://cdn.socket.io/4.5.4/socket.io.js"></script>
-  <script src="participant-script.js"></script>
+  document.getElementById("testArea").style.display = "block";
+
+  // Load text
+  const res = await fetch("/api/get-round-text?roomCode=" + roomCode.value + "&roundNumber=" + roundNumber);
+  const data = await res.json();
+  roundText = data.customText;
+  displayText();
+
+  // Start Timer
+  let timeLeft = duration;
+  document.getElementById("timer").textContent = timeLeft;
+
+  const countdown = setInterval(() => {
+    timeLeft--;
+    document.getElementById("timer").textContent = timeLeft;
+
+    if (timeLeft <= 0) {
+      typingEnabled = false;
+      clearInterval(countdown);
+      socket.emit("endRound", { roomCode: roomCode.value });
+    }
+  }, 1000);
+});
+
+/* ---------------- DISPLAY TEXT ---------------- */
+function displayText() {
+  textDisplay.innerHTML = "";
+  roundText.split("").forEach(c => {
+    const span = document.createElement("span");
+    span.textContent = c;
+    textDisplay.appendChild(span);
+  });
+}
+
+/* ---------------- TYPING LOGIC ---------------- */
+document.addEventListener("keydown", (e) => {
+  if (!typingEnabled) return;
+
+  const spans = textDisplay.querySelectorAll("span");
+  const expected = spans[progressIndex]?.textContent;
+  if (!expected) return;
+
+  if (e.key === "Backspace") {
+    if (progressIndex > 0) {
+      progressIndex--;
+      backspaceCount++;
+      spans[progressIndex].classList.remove("correct", "incorrect");
+    }
+    saveProgress();
+    return;
+  }
+
+  if (e.key.length === 1) {
+    if (e.key === expected) {
+      spans[progressIndex].classList.add("correct");
+      correctChars++;
+    } else {
+      spans[progressIndex].classList.add("incorrect");
+      incorrectChars++;
+    }
+    progressIndex++;
+    saveProgress();
+  }
+});
+
+/* ---------------- SEND LIVE UPDATE ---------------- */
+function saveProgress() {
+  socket.emit("typingProgress", {
+    roomCode: roomCode.value,
+    participantId,
+    correctChars,
+    incorrectChars,
+    backspaceCount,
+    progressIndex
+  });
+}
+
+/* ---------------- STOP TYPING WHEN ROUND ENDS ---------------- */
+socket.on("roundEnded", () => {
+  typingEnabled = false;
+  document.getElementById("timer").textContent = "Finished";
+});
+</script>
+
 </body>
-
 </html>
