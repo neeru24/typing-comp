@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,12 +7,14 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 
+
 <body class="dark-theme">
   <div class="container">
     <header class="header">
       <h1>⚡ TechFest Typing Battle</h1>
       <span class="role-badge">PARTICIPANT</span>
     </header>
+
 
     <!-- JOIN SCREEN -->
     <section id="joinScreen" class="center-screen">
@@ -37,6 +38,7 @@
       </div>
     </section>
 
+
     <!-- LOBBY SCREEN -->
     <section id="lobbyScreen" class="center-screen hidden">
       <div class="lobby-card">
@@ -57,6 +59,7 @@
       </div>
     </section>
 
+
     <!-- TYPING TEST SCREEN -->
     <section id="testScreen" class="test-screen-improved hidden">
       <!-- STATS BAR -->
@@ -65,6 +68,7 @@
           <span class="stat-label">WPM</span>
           <span class="stat-value" id="wpmDisplay">0</span>
         </div>
+
 
         <div class="stat-box">
           <span class="stat-label">Accuracy</span>
@@ -75,6 +79,7 @@
           <span class="stat-value" id="timerDisplay">0s</span>
         </div>
       </div>
+
 
       <!-- TYPING AREA - CENTERED AND IMPROVED -->
       <div class="typing-container-improved">
@@ -89,6 +94,7 @@
       </div>
     </section>
 
+
     <!-- RESULTS SCREEN -->
     <section id="resultsScreen" class="center-screen hidden">
       <div class="results-card">
@@ -98,32 +104,43 @@
             <span>Your WPM:</span>
             <strong id="resultWpm">0</strong>
           </div>
-          <div class="result-item">
-            <span>Your Accuracy:</span>
+           <div class="result-item">
+            <span>Your Accuracy :</span>
             <strong id="resultAccuracy">0%</strong>
           </div>
+          <div class="result-item">
+            <span>Your Errors:</span>
+            <strong id="resultErrors">0</strong>
+          </div>
+          <div class="result-item">
+            <span>Your Backspaces:</span>
+            <strong id="resultBackspaces">0</strong>
+          </div>
         </div>
-        <!-- <div class="results-leaderboard">
-          <h3>Round Leaderboard</h3>
-          <div id="roundLeaderboard"></div>
-        </div> -->
+
         <p id="nextRoundText" class="next-round-text">
           ⏳ Waiting for next round...
         </p>
       </div>
     </section>
 
-    <!-- FINAL RESULTS SCREEN -->
-    <section id="finalScreen" class="center-screen hidden">
-      <div class="final-card">
-        <h2>🏆 Final Rankings 🏆</h2>
-        <div id="finalRankings"></div>
-        <button type="button" class="btn-primary" onclick="location.reload()">
-          Start New Competition
-        </button>
-      </div>
-    </section>
+
+    <!-- COMPLETION SCREEN -->
+<section id="completionScreen" class="center-screen hidden ">
+  <div class="completion-card">
+    <h2 style="text-align: center;">Results Saved Successfully!</h2>
+    <p class="completion-message" style="text-align: center; margin-top: 8px;">
+      Results will be announced shortly.
+    </p>
+
+    <button type="button" class="btn-primary" id="joinNewCompetitionBtn" style="margin-top: 20px;">
+      Join New Competition
+    </button>
   </div>
+</section>
+
+  </div>
+
 
   <script src="https://cdn.socket.io/4.5.4/socket.io.js"></script>
   <script src="participant-script.js"></script>

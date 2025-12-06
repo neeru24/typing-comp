@@ -7,7 +7,6 @@ let isTestInProgress = false;
 let testStartTime = 0;
 let typingText = '';
 let currentRoundDuration = 0;
-
 let totalErrors = 0;
 let backspaceCount = 0;
 let typedChars = [];
@@ -18,17 +17,14 @@ const joinScreen = document.getElementById('joinScreen');
 const lobbyScreen = document.getElementById('lobbyScreen');
 const testScreen = document.getElementById('testScreen');
 const resultsScreen = document.getElementById('resultsScreen');
-const finalScreen = document.getElementById('finalScreen');
-
+const completionScreen = document.getElementById('completionScreen');
 const competitionCodeInput = document.getElementById('competitionCode');
 const participantNameInput = document.getElementById('participantName');
 const joinBtn = document.getElementById('joinBtn');
 const joinError = document.getElementById('joinError');
-
 const welcomeName = document.getElementById('welcomeName');
 const competitionNameDisplay = document.getElementById('competitionName');
 const participantCountDisplay = document.getElementById('participantCountDisplay');
-
 const typingInput = document.getElementById('typingInput');
 const textDisplay = document.getElementById('textDisplay');
 const wpmDisplay = document.getElementById('wpmDisplay');
@@ -96,7 +92,6 @@ typingInput.addEventListener('keydown', (e) => {
     e.preventDefault();
     const nextIndex = typedChars.length;
     const expectedChar = typingText[nextIndex] || '';
-
     typedChars.push(e.key);
     typingInput.value = typedChars.join('');
 
@@ -115,14 +110,16 @@ function updateTypingStats() {
   const correctChars = calculateCorrectChars(inputText, typingText);
   const totalChars = inputText.length;
   const incorrectChars = totalChars - correctChars;
-
   const elapsedSeconds = (Date.now() - testStartTime) / 1000;
+
   const wpm = elapsedSeconds > 0
     ? Math.round((correctChars / 5) / (elapsedSeconds / 60))
     : 0;
+
   const accuracy = totalChars > 0
     ? Math.round((correctChars / totalChars) * 100)
     : 100;
+
   wpmDisplay.textContent = wpm;
   accuracyDisplay.textContent = accuracy + '%';
   updateTextDisplay(inputText);
@@ -150,7 +147,7 @@ function updateTextDisplay(inputText) {
   let html = '';
   for (let i = 0; i < typingText.length; i++) {
     const char = typingText[i];
-    let span = `<span>${char}</span>`;
+    let span = `${char}`;
 
     if (i < inputText.length) {
       if (inputText[i] === char) {
@@ -161,8 +158,10 @@ function updateTextDisplay(inputText) {
     } else if (i === inputText.length) {
       span = `<span class="current">${char}</span>`;
     }
+
     html += span;
   }
+
   textDisplay.innerHTML = html;
 }
 
@@ -192,11 +191,11 @@ function showError(message) {
 }
 
 // ============= SOCKET EVENTS =============
+
 socket.on('joinSuccess', (data) => {
   competitionId = data.competitionId;
   competitionNameDisplay.textContent = data.name;
   welcomeName.textContent = participantName;
-
   joinScreen.classList.add('hidden');
   lobbyScreen.classList.remove('hidden');
 });
@@ -217,19 +216,18 @@ socket.on('roundStarted', (data) => {
 
   lobbyScreen.classList.add('hidden');
   resultsScreen.classList.add('hidden');
+  completionScreen.classList.add('hidden');
   testScreen.classList.remove('hidden');
 
   typingInput.value = '';
   typingInput.disabled = false;
   typingInput.focus();
   updateTextDisplay('');
-
   wpmDisplay.textContent = '0';
   accuracyDisplay.textContent = '100%';
 
   isTestInProgress = true;
   testStartTime = Date.now();
-
   startTimer(duration);
 });
 
@@ -240,52 +238,42 @@ socket.on('roundEnded', (data) => {
   resultsScreen.classList.remove('hidden');
 
   const personalResult = data.leaderboard.find(item => item.name === participantName);
+
   if (personalResult) {
     document.getElementById('resultWpm').textContent = personalResult.wpm;
     document.getElementById('resultAccuracy').textContent = personalResult.accuracy + '%';
-    document.getElementById('nextRoundText').innerHTML = `
-      Errors: <b>${personalResult.errors || 0}</b> |
-      Backspaces: <b>${personalResult.backspaces || 0}</b> |
-      Fair Score: <b>${personalResult.fairScore || 0}</b>
-    `;
+    document.getElementById('resultErrors').textContent = personalResult.errors;
+    document.getElementById('resultBackspaces').textContent = personalResult.backspaces;
   }
 });
 
+// ============= FINAL RESULTS - SHOW COMPLETION SCREEN =============
 socket.on('finalResults', (data) => {
+  // Hide all other screens
+  joinScreen.classList.add('hidden');
+  lobbyScreen.classList.add('hidden');
+  testScreen.classList.add('hidden');
   resultsScreen.classList.add('hidden');
-  finalScreen.classList.remove('hidden');
-
-  const rankingsHtml = data.rankings.map((item, index) => {
-    const medals = ['🥇', '🥈', '🥉'];
-    const medal = medals[index] || `#${index + 1}`;
-
-    return `
-      <div class="rank-item">
-        <div class="rank-medal">${medal}</div>
-        <div class="rank-details">
-          <div class="rank-name">${item.name}</div>
-          <div class="rank-stats">
-            <span>Avg WPM: <strong>${item.avgWpm}</strong></span>
-            <span>Accuracy: <strong>${item.avgAccuracy}%</strong></span>
-            <span>Errors: <strong>${item.totalErrors}</strong></span>
-            <span>Backspaces: <strong>${item.totalBackspaces}</strong></span>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  document.getElementById('finalRankings').innerHTML = rankingsHtml;
-});
-
-socket.on('participantLeft', (data) => {
-  participantCountDisplay.textContent = data.totalParticipants;
-});
-
-socket.on('error', (data) => {
-  showError(data.message || 'An error occurred');
+  
+  // Show completion screen with save notification
+  completionScreen.classList.remove('hidden');
 });
 
 socket.on('disconnect', () => {
-  console.log('⚠️ Disconnected from server');
+  showError('Disconnected from server');
+  joinScreen.classList.remove('hidden');
+  lobbyScreen.classList.add('hidden');
+  testScreen.classList.add('hidden');
+  resultsScreen.classList.add('hidden');
+  completionScreen.classList.add('hidden');
 });
+
+
+const joinNewCompetitionBtn = document.getElementById('joinNewCompetitionBtn');
+
+if (joinNewCompetitionBtn) {
+  joinNewCompetitionBtn.addEventListener('click', () => {
+
+    window.location.href = '/'; 
+  });
+}

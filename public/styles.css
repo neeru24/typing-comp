@@ -1376,7 +1376,8 @@ body {
 .join-card,
 .lobby-card,
 .results-card,
-.final-card {
+.final-card,
+.completion-card{
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
