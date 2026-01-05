@@ -59,7 +59,7 @@ function renderRounds() {
     roundDiv.innerHTML = `
       <div class="round-header">
         <h4>Round ${index + 1}</h4>
-        <button class="btn-remove" onclick="removeRound(${index})">✕</button>
+        <button class="btn-remove">✕</button>
       </div>
       <div class="form-group">
         <label>Text to Type</label>
@@ -72,6 +72,10 @@ function renderRounds() {
       </div>
     `;
     roundsList.appendChild(roundDiv);
+
+    // Delete-Round button listener
+    const deleteBtn = roundDiv.querySelector('.btn-remove');
+    deleteBtn.addEventListener('click', () => removeRound(index));
 
     // Persist text input into state
     const textarea = document.getElementById(`text-${index}`);
