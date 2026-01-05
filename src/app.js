@@ -75,6 +75,7 @@ logger.info('✓ Express app initialized');
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/export', require('./routes/export'));
 app.use('/api', require('./routes/competition'));
 
 // Static files

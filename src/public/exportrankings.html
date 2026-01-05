@@ -450,11 +450,135 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <script>
+        // Check authentication
+        const authToken = localStorage.getItem('authToken');
+        if (!authToken) {
+            alert('Please login first to export rankings');
+            window.location.href = '/login';
+        }
+
         // Initialize preview on load
         document.addEventListener('DOMContentLoaded', () => {
             updatePreview();
             document.getElementById('rankingsData').addEventListener('change', updatePreview);
+            
+            // Add backend export buttons
+            addBackendExportOptions();
         });
+        
+        function addBackendExportOptions() {
+            const section = document.querySelector('.section:last-child');
+            const newSection = document.createElement('div');
+            newSection.className = 'section';
+            newSection.style.marginTop = '20px';
+            newSection.style.padding = '20px';
+            newSection.style.background = 'var(--color-surface)';
+            newSection.style.border = '1px solid var(--color-border)';
+            newSection.style.borderRadius = '8px';
+            
+            newSection.innerHTML = `
+                <h2>📥 Export From Database</h2>
+                <p style="color: var(--color-text-secondary); margin-bottom: 20px;">
+                    Enter competition ID to export directly from database
+                </p>
+                <div class="form-group">
+                    <label for="dbCompetitionId">Competition ID</label>
+                    <input type="text" id="dbCompetitionId" placeholder="e.g., 507f1f77bcf86cd799439011" />
+                </div>
+                <div class="action-buttons">
+                    <button onclick="exportFromDB('csv')" class="btn-primary">
+                        <span class="icon">📄</span>
+                        Export CSV
+                    </button>
+                    <button onclick="exportFromDB('json')" class="btn-primary">
+                        <span class="icon">📋</span>
+                        Export JSON
+                    </button>
+                    <button onclick="exportFromDB('rounds')" class="btn-primary">
+                        <span class="icon">🔢</span>
+                        Export Rounds CSV
+                    </button>
+                </div>
+            `;
+            
+            document.querySelector('.content').appendChild(newSection);
+        }
+        
+        async function exportFromDB(format) {
+            const competitionId = document.getElementById('dbCompetitionId').value.trim();
+            
+            if (!competitionId) {
+                showMessage('✗ Please enter competition ID', 'error');
+                return;
+            }
+            
+            const endpoints = {
+                'csv': `/api/export/${competitionId}/csv`,
+                'json': `/api/export/${competitionId}/json`,
+                'rounds': `/api/export/${competitionId}/rounds/csv`
+            };
+            
+            try {
+                showMessage('⏳ Exporting...', 'info');
+                
+                const response = await fetch(endpoints[format], {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                if (response.status === 401) {
+                    showMessage('✗ Session expired. Please login again.', 'error');
+                    localStorage.clear();
+                    setTimeout(() => window.location.href = '/login', 2000);
+                    return;
+                }
+                
+                if (response.status === 403) {
+                    showMessage('✗ You do not have permission to export this competition', 'error');
+                    return;
+                }
+                
+                if (response.status === 404) {
+                    showMessage('✗ Competition not found', 'error');
+                    return;
+                }
+                
+                if (response.status === 400) {
+                    const error = await response.json();
+                    showMessage(`✗ ${error.error}`, 'error');
+                    return;
+                }
+                
+                if (!response.ok) {
+                    throw new Error('Export failed');
+                }
+                
+                // Get filename from Content-Disposition header
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = `export_${Date.now()}.${format === 'json' ? 'json' : 'csv'}`;
+                if (contentDisposition) {
+                    const match = contentDisposition.match(/filename="(.+)"/);
+                    if (match) filename = match[1];
+                }
+                
+                // Download file
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                showMessage(`✓ ${format.toUpperCase()} downloaded successfully!`, 'success');
+            } catch (error) {
+                console.error('Export error:', error);
+                showMessage('✗ Export failed. Please try again.', 'error');
+            }
+        }
         
         function updatePreview() {
             try {
