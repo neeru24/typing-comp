@@ -27,16 +27,3 @@ body:
       label: "Additional Context (Optional)"
       description: "Add any other context or information that might be relevant to this issue."
       placeholder: "Provide any extra details, screenshots, or references that could help with understanding the issue..."
-
-  - type: checkboxes
-    id: agreement
-    attributes:
-      label: "Agreement"
-      options:
-        - label: "I agree to follow this project's Code of Conduct"
-          required: true
-
-  - type: markdown
-    attributes:
-      value: |
-        **Thank you for raising this help request!** We will review the issue promptly and provide assistance as soon as possible. 🙏
