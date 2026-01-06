@@ -1,10 +1,52 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
 const Organizer = require('../models/Organizer');
 const auth = require('../middleware/auth');
 const logger = require('../config/logger');
 
 const router = express.Router();
+
+// Input validation middleware
+const validateRegistration = [
+  body('name')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Name must be between 2 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Name can only contain letters and spaces'),
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email address'),
+  body('password')
+    .isLength({ min: 6, max: 100 })
+    .withMessage('Password must be between 6 and 100 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one lowercase letter, one uppercase letter, and one number')
+];
+
+const validateLogin = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email address'),
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required')
+];
+
+// Handle validation errors
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: errors.array()
+    });
+  }
+  next();
+};
 
 // Generate JWT token
 const generateToken = (id) => {
@@ -16,24 +58,11 @@ const generateToken = (id) => {
 };
 
 // REGISTER - Create new organizer account
-router.post('/register', async (req, res) => {
+router.post('/register', validateRegistration, handleValidationErrors, async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validation
-    if (!name || !email || !password) {
-      return res.status(400).json({ 
-        error: 'Name, email, and password are required' 
-      });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ 
-        error: 'Password must be at least 6 characters' 
-      });
-    }
-
-    // Check if organizer exists
+    // Additional server-side validation (already sanitized by express-validator)
     const existingOrganizer = await Organizer.findOne({ email: email.toLowerCase() });
     if (existingOrganizer) {
       return res.status(400).json({ 
@@ -43,7 +72,7 @@ router.post('/register', async (req, res) => {
 
     // Create organizer
     const organizer = new Organizer({
-      name,
+      name: name.trim(),
       email: email.toLowerCase(),
       password
     });
@@ -73,16 +102,9 @@ router.post('/register', async (req, res) => {
 });
 
 // LOGIN - Authenticate organizer
-router.post('/login', async (req, res) => {
+router.post('/login', validateLogin, handleValidationErrors, async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Validation
-    if (!email || !password) {
-      return res.status(400).json({ 
-        error: 'Email and password are required' 
-      });
-    }
 
     // Find organizer (include password for comparison)
     const organizer = await Organizer.findOne({ 

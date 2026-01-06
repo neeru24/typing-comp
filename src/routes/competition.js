@@ -1,30 +1,78 @@
 const express = require('express');
+const { body, param, validationResult } = require('express-validator');
 const Competition = require('../models/Competition');
 const generateCode = require('../utils/codeGenerator');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
 
+// Input validation middleware
+const validateCompetitionCreation = [
+  body('name')
+    .trim()
+    .isLength({ min: 3, max: 100 })
+    .withMessage('Competition name must be between 3 and 100 characters')
+    .matches(/^[a-zA-Z0-9\s\-_]+$/)
+    .withMessage('Competition name can only contain letters, numbers, spaces, hyphens, and underscores'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Description cannot exceed 500 characters'),
+  body('rounds')
+    .isArray({ min: 1, max: 10 })
+    .withMessage('At least 1 round is required, maximum 10 rounds allowed'),
+  body('rounds.*.text')
+    .trim()
+    .isLength({ min: 10, max: 2000 })
+    .withMessage('Round text must be between 10 and 2000 characters'),
+  body('rounds.*.duration')
+    .isInt({ min: 30, max: 600 })
+    .withMessage('Round duration must be between 30 and 600 seconds')
+];
+
+const validateCompetitionCode = [
+  param('code')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('Competition code must be exactly 6 characters')
+    .matches(/^[A-Z0-9]+$/)
+    .withMessage('Competition code must contain only uppercase letters and numbers')
+];
+
+const validateCompetitionId = [
+  param('competitionId')
+    .isMongoId()
+    .withMessage('Invalid competition ID format')
+];
+
+// Handle validation errors
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: errors.array()
+    });
+  }
+  next();
+};
+
 // CREATE COMPETITION (Protected)
-router.post('/create', auth, async (req, res) => {
+router.post('/create', auth, validateCompetitionCreation, handleValidationErrors, async (req, res) => {
   try {
     const { name, description, rounds } = req.body;
     
-    if (!name || !rounds || rounds.length === 0) {
-      return res.status(400).json({ error: 'Name and rounds required' });
-    }
-
     const code = generateCode();
     
     const competition = new Competition({
-      name,
-      description: description || '',
+      name: name.trim(),
+      description: description ? description.trim() : '',
       code,
       organizerId: req.organizer.id,
       organizer: req.organizer.name,
       rounds: rounds.map((r, index) => ({
         roundNumber: index + 1,
-        text: r.text,
+        text: r.text.trim(),
         duration: r.duration,
         status: 'pending',
         startedAt: null,
@@ -56,7 +104,7 @@ router.post('/create', auth, async (req, res) => {
 });
 
 // GET COMPETITION BY CODE
-router.get('/competition/:code', async (req, res) => {
+router.get('/competition/:code', validateCompetitionCode, handleValidationErrors, async (req, res) => {
   try {
     const competition = await Competition.findOne({ code: req.params.code });
     
@@ -101,7 +149,7 @@ router.get('/my-competitions', auth, async (req, res) => {
 });
 
 // GET COMPETITION BY ID
-router.get('/competition/:competitionId', async (req, res) => {
+router.get('/competition/:competitionId', validateCompetitionId, handleValidationErrors, async (req, res) => {
   try {
     const competition = await Competition.findById(req.params.competitionId);
     if (!competition) {
@@ -115,7 +163,7 @@ router.get('/competition/:competitionId', async (req, res) => {
 });
 
 // GET COMPETITION RANKINGS
-router.get('/competition/:competitionId/rankings', async (req, res) => {
+router.get('/competition/:competitionId/rankings', validateCompetitionId, handleValidationErrors, async (req, res) => {
   try {
     const competition = await Competition.findById(req.params.competitionId)
       .select('name code finalRankings status');
