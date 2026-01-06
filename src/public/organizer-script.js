@@ -103,7 +103,17 @@ function removeRound(index) {
 createCompBtn.addEventListener('click', async () => {
   const compName = compNameInput.value.trim();
   const compDescription = compDescriptionInput.value.trim();
-  
+ const maxPlayersInput = document.getElementById("maxPlayers");
+const maxPlayers = maxPlayersInput && maxPlayersInput.value
+  ? parseInt(maxPlayersInput.value, 10)
+  : null;
+
+  if (maxPlayers !== null && (isNaN(maxPlayers) || maxPlayers < 1)) {
+  alert("Maximum players must be a number greater than 0");
+  return;
+}
+
+
   if (!compName) {
     alert('Please enter competition name');
     return;
@@ -129,11 +139,13 @@ createCompBtn.addEventListener('click', async () => {
     const response = await fetch('/api/create', {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ 
-        name: compName, 
-        description: compDescription,
-        rounds 
-      })
+    body: JSON.stringify({ 
+  name: compName, 
+  description: compDescription,
+  rounds,
+  maxPlayers // 👈 ADD THIS
+})
+
     });
 
     const data = await response.json();
