@@ -14,15 +14,9 @@ let errorIndices = new Set();
 
 // ================= RESULT HISTORY HELPERS =================
 function saveResultToHistory(result) {
-  const history =
-    JSON.parse(localStorage.getItem("typingResults")) || [];
-
+  const history = JSON.parse(localStorage.getItem("typingResults")) || [];
   const updatedHistory = [result, ...history].slice(0, 10);
-
-  localStorage.setItem(
-    "typingResults",
-    JSON.stringify(updatedHistory)
-  );
+  localStorage.setItem("typingResults", JSON.stringify(updatedHistory));
 }
 
 function loadResultHistory() {
@@ -83,22 +77,22 @@ const joinNewCompetitionBtn = document.getElementById('joinNewCompetitionBtn');
 
 // ====== Monkeytype-style focus ======
 if (textDisplay && typingInput) {
-  textDisplay.addEventListener('click', () => {
-    typingInput.focus();
-  });
+  textDisplay.addEventListener('click', () => typingInput.focus());
 }
 
 // ============= ANTI-CHEATING =============
-document.addEventListener('contextmenu', (e) => e.preventDefault());
-document.addEventListener('paste', (e) => e.preventDefault());
-document.addEventListener('cut', (e) => e.preventDefault());
-document.addEventListener('copy', (e) => e.preventDefault());
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('paste', e => e.preventDefault());
+document.addEventListener('cut', e => e.preventDefault());
+document.addEventListener('copy', e => e.preventDefault());
 
-// Focus monitoring
+// ✅ FIX: Prevent crash if focusWarning does not exist
 document.addEventListener('visibilitychange', () => {
+  if (!focusWarning) return;
+
   if (document.hidden && isTestInProgress) {
     focusWarning.classList.remove('hidden');
-  } else if (!document.hidden) {
+  } else {
     focusWarning.classList.add('hidden');
   }
 });
@@ -109,7 +103,7 @@ joinBtn.addEventListener('click', () => {
   const name = participantNameInput.value.trim();
 
   if (!code || code.length !== 5) {
-    showError('Competition code must be 5 characters');
+    showError('Competition code must be exactly 5 characters');
     return;
   }
 
@@ -118,7 +112,9 @@ joinBtn.addEventListener('click', () => {
     return;
   }
 
+  joinError.classList.remove('show');
   participantName = name;
+
   socket.emit('join', { code, participantName: name });
 });
 
@@ -201,16 +197,16 @@ function updateTextDisplay(inputText) {
   let html = '';
   for (let i = 0; i < typingText.length; i++) {
     const char = typingText[i];
-    let span = `${char}`;
 
     if (i < inputText.length) {
-      span = inputText[i] === char
+      html += inputText[i] === char
         ? `<span class="correct">${char}</span>`
         : `<span class="incorrect">${char}</span>`;
     } else if (i === inputText.length) {
-      span = `<span class="current">${char}</span>`;
+      html += `<span class="current">${char}</span>`;
+    } else {
+      html += char;
     }
-    html += span;
   }
   textDisplay.innerHTML = html;
 }
@@ -237,7 +233,11 @@ function startTimer(duration) {
 function showError(message) {
   joinError.textContent = message;
   joinError.classList.add('show');
-  setTimeout(() => joinError.classList.remove('show'), 4000);
+
+  clearTimeout(showError._t);
+  showError._t = setTimeout(() => {
+    joinError.classList.remove('show');
+  }, 4000);
 }
 
 // ============= SOCKET EVENTS =============
@@ -250,6 +250,10 @@ socket.on('joinSuccess', (data) => {
   lobbyScreen.classList.remove('hidden');
 });
 
+socket.on('joinError', (data) => {
+  showError(data?.message || 'Unable to join competition');
+});
+
 socket.on('participantJoined', (data) => {
   participantCountDisplay.textContent = data.totalParticipants;
 });
@@ -257,7 +261,6 @@ socket.on('participantJoined', (data) => {
 socket.on('roundStarted', (data) => {
   currentRound = data.roundIndex;
   typingText = data.text;
-  const duration = data.duration;
 
   typedChars = [];
   totalErrors = 0;
@@ -272,18 +275,20 @@ socket.on('roundStarted', (data) => {
   typingInput.value = '';
   typingInput.disabled = false;
   typingInput.focus();
+
   updateTextDisplay('');
   wpmDisplay.textContent = '0';
   accuracyDisplay.textContent = '100%';
 
   isTestInProgress = true;
   testStartTime = Date.now();
-  startTimer(duration);
+  startTimer(data.duration);
 });
 
 socket.on('roundEnded', (data) => {
   isTestInProgress = false;
   typingInput.disabled = true;
+
   testScreen.classList.add('hidden');
   resultsScreen.classList.remove('hidden');
 
@@ -297,21 +302,18 @@ socket.on('roundEnded', (data) => {
     document.getElementById('resultErrors').textContent = personalResult.errors;
     document.getElementById('resultBackspaces').textContent = personalResult.backspaces;
 
-    // ===== SAVE RESULT TO HISTORY =====
-    const result = {
+    saveResultToHistory({
       wpm: personalResult.wpm,
       accuracy: personalResult.accuracy,
       characters: typedChars.length,
       timeTaken: currentRoundDuration,
       date: new Date().toLocaleString(),
-    };
+    });
 
-    saveResultToHistory(result);
     renderResultHistory();
   }
 });
 
-// ============= FINAL RESULTS =============
 socket.on('finalResults', () => {
   joinScreen.classList.add('hidden');
   lobbyScreen.classList.add('hidden');
@@ -322,20 +324,15 @@ socket.on('finalResults', () => {
 
 socket.on('disconnect', () => {
   showError('Disconnected from server');
-  joinScreen.classList.remove('hidden');
-  lobbyScreen.classList.add('hidden');
-  testScreen.classList.add('hidden');
-  resultsScreen.classList.add('hidden');
-  completionScreen.classList.add('hidden');
 });
 
+// Buttons
 if (joinNewCompetitionBtn) {
   joinNewCompetitionBtn.addEventListener('click', () => {
     window.location.href = '/';
   });
 }
 
-// Initial render
 document
   .getElementById("clear-history-btn")
   ?.addEventListener("click", clearResultHistory);
