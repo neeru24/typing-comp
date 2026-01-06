@@ -1,61 +1,49 @@
 
 
-# README.md
-
 # ⚡ TechFest Typing Competition Platform
 
-A **production-ready, full-stack typing competition platform** built with Node.js, Socket.io, MongoDB, and Vanilla JavaScript. Perfect for college techfests, typing competitions, and typing speed challenges with real-time scoring and anti-cheating measures.
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/your-repo/typing-comp)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-7+-blue.svg)](https://www.mongodb.com/)
+[![License](https://img.shields.io/badge/license-MIT-red.svg)](LICENSE)
 
-## 📖 Documentation Structure
+> A **production-ready, full-stack typing competition platform** built with Node.js, Socket.io, MongoDB, and Vanilla JavaScript. Perfect for college techfests, typing competitions, and typing speed challenges with real-time scoring and anti-cheating measures.
 
-This documentation is organized into modular files for better navigation. See the [docs](./docs/) folder for complete documentation:
+## 📋 Table of Contents
 
-- **[FEATURES.md](./docs/FEATURES.md)** - Complete feature list and capabilities
-- **[SETUP.md](./docs/SETUP.md)** - Installation and configuration guide
-- **[QUICKSTART.md](./docs/QUICKSTART.md)** - Quick start guide for organizers and participants
-- **[ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - Project structure and tech stack
-- **[SOCKET_API.md](./docs/SOCKET_API.md)** - WebSocket events and communication protocol
-- **[DATABASE.md](./docs/DATABASE.md)** - MongoDB schema and data structure
-- **[DESIGN_SYSTEM.md](./docs/DESIGN_SYSTEM.md)** - Color tokens, typography, spacing, animations
-- **[REST_API.md](./docs/REST_API.md)** - REST API endpoints and responses
-- **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - Deployment guides for Render and Railway
-- **[TESTING.md](./docs/TESTING.md)** - Testing checklist and edge cases
-- **[CONFIG.md](./docs/CONFIG.md)** - Configuration and customization options
-- **[TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)** - Common issues and solutions
-- **[PERFORMANCE.md](./docs/PERFORMANCE.md)** - Performance metrics and optimization
-- **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)** - Contribution guidelines
+- [✨ Features](#-features)
+- [🚀 Quick Start](#-quick-start)
+- [🐳 Run with Docker](#-run-with-docker)
+- [📖 Documentation](#-documentation)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
 
-## 🖼️ Screenshots & Demo
+## ✨ Features
 
-### Participant – Join & Validation
-<img width="1365" height="813" alt="image" src="https://github.com/user-attachments/assets/5da7cdf4-90d3-461c-8e54-c868efb35727" />
+- **Real-time Competition**: Live typing races with instant updates via WebSocket
+- **Anti-Cheating Measures**: Advanced detection to ensure fair play
+- **Multi-Role Support**: Separate interfaces for organizers, participants, and admins
+- **Comprehensive Scoring**: Accurate WPM and accuracy calculations
+- **Export Rankings**: Generate and export competition results
+- **Responsive Design**: Works seamlessly on desktop and mobile devices
+- **Production Ready**: Optimized for performance and scalability
 
+## 🚀 Quick Start
 
-### Participant – Live Typing Test
-<img width="914" height="801" alt="image" src="https://github.com/user-attachments/assets/593e1016-97a3-4c7c-96fb-364ecb5b9951" />
-
-
-### Organizer – Dashboard
-<img width="1779" height="886" alt="image" src="https://github.com/user-attachments/assets/025d4894-c593-4522-87b0-6b635bcabbd6" />
-
-
-
-## 🐳 Run with Docker (Recommended)
+### 🐳 Run with Docker (Recommended)
 
 You can run the entire application stack (App + MongoDB) with a single command. No need to install Node.js or MongoDB locally.
 
-1.  **Start the Platform**
-    ```bash
-    docker-compose up --build
-    ```
+1. **Start the Platform**
+   ```bash
+   docker-compose up --build
+   ```
 
-2.  **Access Application**
-    - Organizer: `http://localhost:3000/organizer`
-    - Participant: `http://localhost:3000/`
+2. **Access Application**
+   - **Organizer Dashboard**: [http://localhost:3000/organizer](http://localhost:3000/organizer)
+   - **Participant Portal**: [http://localhost:3000/](http://localhost:3000/)
 
----
-
-## 🚀 Manual Quick Start
+### 🔧 Manual Setup
 
 1. **Clone & Install**
    ```bash
@@ -78,10 +66,41 @@ You can run the entire application stack (App + MongoDB) with a single command. 
    ```
 
 4. **Access Application**
-   - Organizer: `http://localhost:3000/organizer`
-   - Participant: `http://localhost:3000/`
+   - **Organizer Dashboard**: [http://localhost:3000/organizer](http://localhost:3000/organizer)
+   - **Participant Portal**: [http://localhost:3000/](http://localhost:3000/)
+
+## 📖 Documentation
+
+This documentation is organized into modular files for better navigation. See the [docs](./docs/) folder for complete documentation:
+
+| Document | Description |
+|----------|-------------|
+| **[FEATURES.md](./docs/FEATURES.md)** | Complete feature list and capabilities |
+| **[SETUP.md](./docs/SETUP.md)** | Installation and configuration guide |
+| **[QUICKSTART.md](./docs/QUICKSTART.md)** | Quick start guide for organizers and participants |
+| **[ARCHITECTURE.md](./docs/ARCHITECTURE.md)** | Project structure and tech stack |
+| **[SOCKET_API.md](./docs/SOCKET_API.md)** | WebSocket events and communication protocol |
+| **[DATABASE.md](./docs/DATABASE.md)** | MongoDB schema and data structure |
+| **[DESIGN_SYSTEM.md](./docs/DESIGN_SYSTEM.md)** | Color tokens, typography, spacing, animations |
+| **[REST_API.md](./docs/REST_API.md)** | REST API endpoints and responses |
+| **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** | Deployment guides for Render and Railway |
+| **[TESTING.md](./docs/TESTING.md)** | Testing checklist and edge cases |
+| **[CONFIG.md](./docs/CONFIG.md)** | Configuration and customization options |
+| **[TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)** | Common issues and solutions |
+| **[PERFORMANCE.md](./docs/PERFORMANCE.md)** | Performance metrics and optimization |
+| **[CONTRIBUTING.md](./docs/CONTRIBUTING.md)** | Contribution guidelines |
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](./docs/CONTRIBUTING.md) for details on how to get started.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
 
 **Made with ❤️ for techfest typing competitions**
 
-**Last Updated**: January 4, 2026  
+**Last Updated**: January 6, 2026  
 **Version**: 1.0.0
