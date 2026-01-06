@@ -9,7 +9,7 @@
   <body class="dark-theme">
     <div class="container">
       <!-- HEADER -->
-      <header class="header">
+   <header class="header organizer-header">
         <h1>⚡ TechFest Typing Battle</h1>
         <div style="display: flex; align-items: center; gap: 12px;">
           <span class="role-badge">ORGANIZER</span>
@@ -23,6 +23,9 @@
         <!-- LEFT: Setup Section -->
         <section class="section setup-section" id="setupSection">
           <h2>📝 Create Competition</h2>
+          <p class="section-subtitle">
+  Set up your competition and rounds
+</p>
 
           <!-- FORM CONTAINER (will be hidden after creation) -->
           <div id="setupForm" class="setup-form">
@@ -44,6 +47,18 @@
                 placeholder="e.g., College typing speed contest"
               />
             </div>
+            <div class="form-group">
+  <label for="maxPlayers">Maximum Players</label>
+  <input
+    type="number"
+    id="maxPlayers"
+    min="1"
+    placeholder="e.g., 50"
+  />
+  <small class="helper-text">
+    Leave empty for unlimited participants
+  </small>
+</div>
 
             <!-- ROUNDS SECTION -->
             <div class="rounds-container">
@@ -78,7 +93,9 @@
         <!-- RIGHT: Control & Leaderboard Section -->
         <section class="section control-section">
           <h2>👥 Control Panel</h2>
-
+          <p class="section-subtitle">
+  Manage rounds, analytics, and results
+</p>
           <!-- COMPETITION INFO -->
           <div id="compInfo" class="comp-info hidden">
             <div class="info-box">
@@ -159,7 +176,10 @@
           <div class="leaderboard-section">
             <h3>📊 Live Leaderboard</h3>
             <div id="leaderboardContainer" class="leaderboard-container">
-              <p class="placeholder-text">Awaiting round start...</p>
+            <p class="placeholder-text muted">
+  ⏳ No active round yet. Start a round to see live rankings.
+</p>
+
             </div>
           </div>
         </section>

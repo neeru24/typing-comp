@@ -396,7 +396,7 @@ socket.on('disconnect', () => {
 // Buttons
 if (joinNewCompetitionBtn) {
   joinNewCompetitionBtn.addEventListener('click', () => {
-    window.location.href = '/';
+    window.location.href = '/participant';
   });
 }
 

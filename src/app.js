@@ -84,8 +84,13 @@ app.use('/api', require('./routes/competition'));
 app.use(express.static(path.join(__dirname, './public')));
 
 // Fallback route
-app.get('/', (req, res) => {
+// Fallback route
+app.get('/participant', (req, res) => {
   res.sendFile(path.join(__dirname, './public/participant.html'));
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, './public/index.html'));
 });
 
 app.get('/organizer', (req, res) => {
