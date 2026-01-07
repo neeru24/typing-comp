@@ -19,48 +19,106 @@
             background: #1a1a2e;
             font-family: 'Courier New', monospace;
             overflow: hidden;
+            padding: 20px;
         }
 
         .loader-container {
             text-align: center;
             padding: 30px;
             max-width: 600px;
-            animation: fadeIn 1.5s ease-out;
+            width: 100%;
+            animation: fadeIn 1s ease-out;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 25px;
         }
 
-        /* Logo/Title */
+        /* Logo/Title - Faster animation */
         .loader-title {
             color: #00ff9d;
             font-size: 2.5rem;
-            margin-bottom: 50px;
             text-shadow: 0 0 10px rgba(0, 255, 157, 0.5);
             letter-spacing: 2px;
-            animation: titleGlow 4s ease-in-out infinite;
+            animation: titleGlow 3s ease-in-out infinite;
+            margin-bottom: 10px;
+            line-height: 1.2;
         }
 
-        /* Main Loader */
+        /* Subtitle */
+        .loader-subtitle {
+            color: #aaa;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+            animation: fadeIn 0.8s ease-out 0.3s both;
+        }
+
+        /* Typing text container - faster animation */
+        .typing-text-container {
+            width: 100%;
+            height: 60px;
+            position: relative;
+            margin: 15px 0;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.8s ease-out 0.4s both;
+        }
+
+        .typing-text {
+            color: white;
+            font-size: 1.4rem;
+            position: relative;
+            height: 100%;
+            width: 100%;
+        }
+
+        .text-line {
+            position: absolute;
+            width: 100%;
+            left: 0;
+            text-align: center;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: textSlide 5s infinite; /* Reduced from 8s to 5s */
+        }
+
+        .text-line:nth-child(1) { animation-delay: 0s; }
+        .text-line:nth-child(2) { animation-delay: 1.25s; } /* Adjusted timing */
+        .text-line:nth-child(3) { animation-delay: 2.5s; }
+        .text-line:nth-child(4) { animation-delay: 3.75s; }
+
+        /* Main Loader - faster cursor */
         .typing-loader {
             position: relative;
-            width: 300px;
-            height: 120px;
-            margin: 0 auto 40px;
+            width: 100%;
+            max-width: 400px;
+            height: 80px;
+            margin: 15px 0;
             background: rgba(255, 255, 255, 0.03);
             border-radius: 10px;
             overflow: hidden;
+            border: 1px solid rgba(0, 255, 157, 0.1);
+            animation: fadeIn 0.8s ease-out 0.5s both;
         }
 
-        /* Cursor with slower movement */
+        /* Cursor - faster movement */
         .cursor {
             position: absolute;
             left: 0;
             top: 50%;
             transform: translateY(-50%);
             width: 12px;
-            height: 50px;
+            height: 40px;
             background: linear-gradient(to bottom, #00ff9d, #00cc7a);
             border-radius: 3px;
-            animation: cursorMove 4s infinite ease-in-out,
-                     cursorBlink 1.2s infinite;
+            animation: cursorMove 2.5s infinite ease-in-out, /* Reduced from 4s to 2.5s */
+                     cursorBlink 0.8s infinite; /* Faster blink */
             box-shadow: 0 0 20px rgba(0, 255, 157, 0.8);
             z-index: 2;
         }
@@ -71,396 +129,501 @@
             top: 50%;
             left: 20px;
             right: 20px;
-            height: 2px;
-            background: rgba(255, 255, 255, 0.1);
+            height: 1px;
+            background: rgba(255, 255, 255, 0.05);
             transform: translateY(-50%);
         }
 
-        /* Keyboard keys animation - slower */
+        /* Percentage indicator */
+        .percentage-container {
+            width: 100%;
+            max-width: 400px;
+            margin: 15px 0;
+            animation: fadeIn 0.8s ease-out 0.6s both;
+        }
+
+        .percentage-label {
+            color: #aaa;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            text-align: left;
+        }
+
+        .percentage-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+
+        .percentage-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff9d, #00b8ff);
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.2s ease; /* Faster transition */
+        }
+
+        .percentage-text {
+            color: #00ff9d;
+            font-size: 1.5rem;
+            font-weight: bold;
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        /* Keyboard keys animation - faster */
+        .keyboard-section {
+            width: 100%;
+            max-width: 400px;
+            margin: 20px 0;
+            animation: fadeIn 0.8s ease-out 0.7s both;
+        }
+
+        .keyboard-label {
+            color: #aaa;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
         .keyboard-keys {
             display: flex;
             justify-content: center;
-            gap: 15px;
-            margin: 50px 0;
+            gap: 12px;
+            flex-wrap: wrap;
         }
 
         .key {
-            width: 50px;
-            height: 50px;
+            width: 45px;
+            height: 45px;
             background: linear-gradient(145deg, #2d2d44, #252536);
-            border-radius: 10px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
             color: #00ff9d;
             font-weight: bold;
-            font-size: 20px;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
-            animation: keyPress 3s infinite ease-in-out;
-            transform-style: preserve-3d;
-            transition: all 0.3s ease;
+            font-size: 1.1rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            animation: keyPress 2s infinite ease-in-out; /* Reduced from 3s to 2s */
+            cursor: pointer;
+            transition: transform 0.15s ease; /* Faster hover */
         }
 
         .key:hover {
-            transform: translateY(-5px);
+            transform: translateY(-3px);
         }
 
         .key:nth-child(1) { animation-delay: 0s; }
-        .key:nth-child(2) { animation-delay: 0.5s; }
-        .key:nth-child(3) { animation-delay: 1s; }
-        .key:nth-child(4) { animation-delay: 1.5s; }
-        .key:nth-child(5) { animation-delay: 2s; }
+        .key:nth-child(2) { animation-delay: 0.2s; } /* Reduced delays */
+        .key:nth-child(3) { animation-delay: 0.4s; }
+        .key:nth-child(4) { animation-delay: 0.6s; }
+        .key:nth-child(5) { animation-delay: 0.8s; }
 
-        /* Loading text - slower dots */
-        .loading-text {
+        /* Loading dots - faster */
+        .loading-dots {
             color: #00ff9d;
-            font-size: 20px;
-            margin: 40px 0;
+            font-size: 1.1rem;
+            margin: 20px 0;
             letter-spacing: 3px;
+            height: 24px;
+            animation: fadeIn 0.8s ease-out 0.8s both;
         }
 
-        .loading-text span {
-            animation: dots 3s infinite;
+        .dot {
             opacity: 0;
+            animation: dotPulse 1s infinite; /* Faster pulse */
         }
 
-        .loading-text span:nth-child(1) { animation-delay: 0.5s; }
-        .loading-text span:nth-child(2) { animation-delay: 1s; }
-        .loading-text span:nth-child(3) { animation-delay: 1.5s; }
-
-        /* Progress bar - slower */
-        .progress-container {
-            width: 350px;
-            height: 6px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-            margin: 50px auto 0;
-            overflow: hidden;
-            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
-        }
-
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #00ff9d, #00b8ff, #00ff9d);
-            border-radius: 10px;
-            animation: progress 5s infinite ease-in-out;
-            width: 40%;
-            background-size: 200% 100%;
-        }
-
-        /* Typing text effect - slower */
-        .typing-text {
-            color: white;
-            font-size: 26px;
-            margin-bottom: 50px;
-            height: 35px;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .typing-text span {
-            display: inline-block;
-            animation: typing 6s infinite;
-            position: absolute;
-            width: 100%;
-            left: 0;
-        }
+        .dot:nth-child(1) { animation-delay: 0s; }
+        .dot:nth-child(2) { animation-delay: 0.2s; } /* Reduced delays */
+        .dot:nth-child(3) { animation-delay: 0.4s; }
 
         /* Status message */
-        .status-message {
+        .status-container {
+            width: 100%;
+            max-width: 400px;
+            margin-top: 15px;
+            animation: fadeIn 0.8s ease-out 0.9s both;
+        }
+
+        .status-label {
             color: #aaa;
-            font-size: 16px;
-            margin-top: 30px;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            text-align: left;
+        }
+
+        .status-message {
+            color: #ddd;
+            font-size: 0.95rem;
             min-height: 24px;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            border-left: 3px solid #00ff9d;
+            text-align: left;
+            line-height: 1.4;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
-        /* Percentage indicator */
-        .percentage {
-            color: #00ff9d;
-            font-size: 32px;
-            font-weight: bold;
-            margin: 20px 0;
-            font-family: 'Arial', sans-serif;
-        }
-
-        /* Enhanced Animations with longer durations */
+        /* Faster Animations */
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
+            from { opacity: 0; transform: translateY(15px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
         @keyframes titleGlow {
             0%, 100% { 
-                text-shadow: 0 0 10px rgba(0, 255, 157, 0.5),
-                           0 0 20px rgba(0, 255, 157, 0.3);
+                text-shadow: 0 0 10px rgba(0, 255, 157, 0.5);
             }
             50% { 
                 text-shadow: 0 0 20px rgba(0, 255, 157, 0.8),
-                           0 0 40px rgba(0, 255, 157, 0.5),
-                           0 0 60px rgba(0, 255, 157, 0.3);
+                           0 0 30px rgba(0, 255, 157, 0.4);
+            }
+        }
+
+        @keyframes textSlide {
+            0% { 
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            15% { /* Faster fade in */
+                opacity: 1;
+                transform: translateY(0);
+            }
+            30% { /* Faster stay visible */
+                opacity: 1;
+                transform: translateY(0);
+            }
+            45% { /* Faster fade out */
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            100% { 
+                opacity: 0;
+                transform: translateY(-20px);
             }
         }
 
         @keyframes cursorMove {
-            0% { 
-                left: 0; 
-                transform: translateY(-50%) scale(1);
-            }
-            25% { 
-                left: 25%; 
-                transform: translateY(-50%) scale(1.1);
-            }
-            50% { 
-                left: 50%; 
-                transform: translateY(-50%) scale(1);
-            }
-            75% { 
-                left: 75%; 
-                transform: translateY(-50%) scale(1.1);
-            }
-            100% { 
-                left: calc(100% - 12px); 
-                transform: translateY(-50%) scale(1);
-            }
+            0% { left: 20px; }
+            25% { left: 25%; }
+            50% { left: 50%; }
+            75% { left: 75%; }
+            100% { left: calc(100% - 32px); }
         }
 
         @keyframes cursorBlink {
-            0%, 90% { opacity: 1; }
-            95% { opacity: 0.3; }
+            0%, 80% { opacity: 1; } /* Faster blink cycle */
+            90% { opacity: 0.3; }
             100% { opacity: 1; }
         }
 
         @keyframes keyPress {
             0%, 100% { 
-                transform: translateY(0) scale(1) rotateX(0);
-                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+                transform: translateY(0);
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
             }
-            20% { 
-                transform: translateY(-15px) scale(1.15) rotateX(10deg);
-                box-shadow: 0 20px 35px rgba(0, 255, 157, 0.6);
+            25% { /* Faster key press */
+                transform: translateY(-8px);
+                box-shadow: 0 12px 25px rgba(0, 255, 157, 0.4);
                 background: linear-gradient(145deg, #00ff9d, #00cc7a);
                 color: #1a1a2e;
             }
-            40% { 
-                transform: translateY(0) scale(1) rotateX(0);
-                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+            50% { /* Faster return */
+                transform: translateY(0);
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
             }
         }
 
-        @keyframes dots {
+        @keyframes dotPulse {
             0%, 100% { opacity: 0.3; }
             50% { opacity: 1; }
         }
 
-        @keyframes progress {
-            0% { 
-                transform: translateX(-100%);
-                background-position: 0% 0%;
-            }
-            50% { 
-                transform: translateX(150%);
-                background-position: 100% 0%;
-            }
-            100% { 
-                transform: translateX(300%);
-                background-position: 0% 0%;
-            }
-        }
-
-        @keyframes typing {
-            0% { 
-                transform: translateY(0);
-                opacity: 1;
-            }
-            20% { 
-                transform: translateY(0);
-                opacity: 1;
-            }
-            25% { 
-                transform: translateY(-35px);
-                opacity: 0;
-            }
-            30% { 
-                transform: translateY(-35px);
-                opacity: 1;
-            }
-            45% { 
-                transform: translateY(-35px);
-                opacity: 1;
-            }
-            50% { 
-                transform: translateY(-70px);
-                opacity: 0;
-            }
-            55% { 
-                transform: translateY(-70px);
-                opacity: 1;
-            }
-            70% { 
-                transform: translateY(-70px);
-                opacity: 1;
-            }
-            75% { 
-                transform: translateY(-105px);
-                opacity: 0;
-            }
-            80% { 
-                transform: translateY(-105px);
-                opacity: 1;
-            }
-            95% { 
-                transform: translateY(-105px);
-                opacity: 1;
-            }
-            100% { 
-                transform: translateY(0);
-                opacity: 0;
-            }
-        }
-
-        /* Fade out animation for loader */
+        /* Faster fade out */
         @keyframes fadeOut {
             from { opacity: 1; transform: scale(1); }
             to { opacity: 0; transform: scale(0.95); }
         }
 
         .fade-out {
-            animation: fadeOut 1.5s ease-out forwards;
+            animation: fadeOut 0.8s ease-out forwards;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 480px) {
+            .loader-container {
+                padding: 20px;
+                gap: 20px;
+            }
+            
+            .loader-title {
+                font-size: 2rem;
+            }
+            
+            .typing-text-container {
+                height: 50px;
+            }
+            
+            .text-line {
+                font-size: 1.2rem;
+            }
+            
+            .key {
+                width: 40px;
+                height: 40px;
+                font-size: 1rem;
+            }
+            
+            .keyboard-keys {
+                gap: 8px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="loader-container" id="loaderContainer">
-        <div class="loader-title">Typing Competition</div>
-        
-        <div class="typing-text">
-            <span>Loading Competition</span>
-            <span>Get Ready to Type</span>
-            <span>Preparing Text</span>
-            <span>Starting Timer</span>
+        <div>
+            <h1 class="loader-title">Typing Competition</h1>
+            <div class="loader-subtitle">Get ready to test your typing speed</div>
         </div>
-        
+
+        <!-- Typing text with proper spacing -->
+        <div class="typing-text-container">
+            <div class="typing-text">
+                <div class="text-line">Loading Competition</div>
+                <div class="text-line">Preparing Text Library</div>
+                <div class="text-line">Setting Up Timer</div>
+                <div class="text-line">Initializing Keyboard</div>
+            </div>
+        </div>
+
+        <!-- Typing cursor loader -->
         <div class="typing-loader">
             <div class="typing-line"></div>
             <div class="cursor"></div>
         </div>
 
-        <div class="percentage" id="percentage">0%</div>
-
-        <div class="keyboard-keys">
-            <div class="key">T</div>
-            <div class="key">Y</div>
-            <div class="key">P</div>
-            <div class="key">E</div>
-            <div class="key">!</div>
+        <!-- Percentage progress -->
+        <div class="percentage-container">
+            <div class="percentage-label">Loading Progress</div>
+            <div class="percentage-bar">
+                <div class="percentage-fill" id="percentageFill"></div>
+            </div>
+            <div class="percentage-text" id="percentageText">0%</div>
         </div>
 
-        <div class="loading-text">
-            Loading<span>.</span><span>.</span><span>.</span>
+        <!-- Keyboard animation -->
+        <div class="keyboard-section">
+            <div class="keyboard-label">Keyboard Ready</div>
+            <div class="keyboard-keys">
+                <div class="key" data-key="T">T</div>
+                <div class="key" data-key="Y">Y</div>
+                <div class="key" data-key="P">P</div>
+                <div class="key" data-key="E">E</div>
+                <div class="key" data-key="!">!</div>
+            </div>
         </div>
 
-        <div class="progress-container">
-            <div class="progress-bar"></div>
+        <!-- Loading dots -->
+        <div class="loading-dots">
+            Loading
+            <span class="dot">.</span>
+            <span class="dot">.</span>
+            <span class="dot">.</span>
         </div>
 
-        <div class="status-message" id="status">Initializing typing environment...</div>
+        <!-- Status message -->
+        <div class="status-container">
+            <div class="status-label">Status</div>
+            <div class="status-message" id="statusMessage">Initializing competition environment...</div>
+        </div>
     </div>
 
     <script>
-        // Status messages with longer display times
-        const statusMessages = [
-            "Initializing typing competition environment...",
-            "Loading competition text library...",
-            "Setting up keyboard event handlers...",
-            "Preparing precision timer...",
-            "Establishing WebSocket connection...",
-            "Calibrating typing speed analyzer...",
-            "Loading user interface components...",
-            "Finalizing competition setup...",
-            "Almost ready..."
-        ];
-
-        let currentStatus = 0;
-        let currentProgress = 0;
-        const statusElement = document.getElementById('status');
-        const percentageElement = document.getElementById('percentage');
+        // Elements
         const loaderContainer = document.getElementById('loaderContainer');
+        const percentageFill = document.getElementById('percentageFill');
+        const percentageText = document.getElementById('percentageText');
+        const statusMessage = document.getElementById('statusMessage');
+        const keys = document.querySelectorAll('.key');
 
-        // Simulate loading progress
-        function updateProgress() {
-            if (currentProgress < 100) {
-                currentProgress += Math.random() * 3 + 1; // Increment by 1-4%
-                if (currentProgress > 100) currentProgress = 100;
-                
-                percentageElement.textContent = Math.floor(currentProgress) + '%';
-                
-                // Update status at certain intervals
-                if (currentProgress % 15 < 3 && currentStatus < statusMessages.length) {
-                    statusElement.textContent = statusMessages[currentStatus];
-                    currentStatus++;
+        // Configuration - FASTER LOADING
+        const config = {
+            totalLoadTime: 4500, // Reduced from 8000 to 4500ms (4.5 seconds)
+            progressInterval: 30, // Faster updates (30ms instead of 50ms)
+            statusMessages: [
+                "Initializing competition environment...",
+                "Loading typing text library...",
+                "Setting up precision timer...",
+                "Configuring keyboard handlers...",
+                "Establishing connection...",
+                "Calibrating speed analyzer...",
+                "Loading user interface...",
+                "Finalizing setup...",
+                "Almost ready..."
+            ],
+            // Faster progression curve - starts fast, slows near the end
+            progressCurve: [
+                { at: 0, speed: 8 },    // Fast start
+                { at: 30, speed: 5 },   // Medium
+                { at: 70, speed: 2 },   // Slower
+                { at: 90, speed: 1 }    // Very slow at the end
+            ]
+        };
+
+        // State
+        let currentProgress = 0;
+        let currentStatus = 0;
+        let startTime = null;
+        let isCompleted = false;
+
+        // Initialize
+        function init() {
+            startTime = Date.now();
+            
+            // Start progress updates
+            updateProgress();
+            
+            // Add keyboard interactivity
+            keys.forEach(key => {
+                key.addEventListener('click', () => {
+                    const keyChar = key.getAttribute('data-key');
+                    simulateKeyPress(key, keyChar);
+                });
+            });
+
+            // Add random key presses for animation (more frequent)
+            setInterval(() => {
+                if (!isCompleted) {
+                    const randomKey = keys[Math.floor(Math.random() * keys.length)];
+                    simulateKeyPress(randomKey, randomKey.getAttribute('data-key'));
                 }
-                
-                // Slow down as we approach 100%
-                const delay = currentProgress > 90 ? 200 : 100;
-                setTimeout(updateProgress, delay);
+            }, 600); // More frequent key presses
+        }
+
+        // Get current speed based on progress
+        function getCurrentSpeed(progress) {
+            for (let i = config.progressCurve.length - 1; i >= 0; i--) {
+                if (progress >= config.progressCurve[i].at) {
+                    return config.progressCurve[i].speed;
+                }
+            }
+            return 1;
+        }
+
+        // Update progress bar - FASTER
+        function updateProgress() {
+            const elapsed = Date.now() - startTime;
+            const rawProgress = Math.min(100, (elapsed / config.totalLoadTime) * 100);
+            
+            // Apply speed curve
+            const speed = getCurrentSpeed(currentProgress);
+            const increment = speed * (config.progressInterval / 100);
+            
+            currentProgress = Math.min(rawProgress, currentProgress + increment);
+            
+            // Update UI
+            percentageFill.style.width = `${currentProgress}%`;
+            percentageText.textContent = `${Math.floor(currentProgress)}%`;
+            
+            // Update status at certain intervals (more frequent updates)
+            const statusIndex = Math.floor((currentProgress / 100) * (config.statusMessages.length - 1));
+            if (statusIndex !== currentStatus && statusIndex < config.statusMessages.length) {
+                currentStatus = statusIndex;
+                statusMessage.textContent = config.statusMessages[currentStatus];
+            }
+            
+            // Continue or complete
+            if (currentProgress < 100) {
+                setTimeout(updateProgress, config.progressInterval);
             } else {
-                statusElement.textContent = "Ready! Preparing to start...";
+                isCompleted = true;
                 completeLoading();
             }
         }
 
-        // Complete loading sequence
+        // Simulate key press - Faster animation
+        function simulateKeyPress(keyElement, keyChar) {
+            // Visual feedback
+            keyElement.style.animation = 'none';
+            keyElement.style.transform = 'translateY(-8px) scale(1.1)';
+            keyElement.style.background = 'linear-gradient(145deg, #00ff9d, #00cc7a)';
+            keyElement.style.color = '#1a1a2e';
+            keyElement.style.boxShadow = '0 12px 25px rgba(0, 255, 157, 0.4)';
+            
+            // Reset faster
+            setTimeout(() => {
+                keyElement.style.animation = '';
+                keyElement.style.transform = '';
+                keyElement.style.background = '';
+                keyElement.style.color = '';
+                keyElement.style.boxShadow = '';
+            }, 150); // Faster reset
+        }
+
+        // Complete loading - Faster transition
         function completeLoading() {
-            // Add fade out class
-            loaderContainer.classList.add('fade-out');
+            // Ensure 100% is shown
+            percentageFill.style.width = '100%';
+            percentageText.textContent = '100%';
             
             // Update final status
-            setTimeout(() => {
-                statusElement.textContent = "✓ Competition ready! Redirecting...";
-                statusElement.style.color = "#00ff9d";
-                statusElement.style.fontWeight = "bold";
-                
-                // Get the intended destination from URL parameter or default to home
-                const urlParams = new URLSearchParams(window.location.search);
-                const redirectTo = urlParams.get('redirect') || '/';
-                
-                // Add a smooth transition before redirecting
+            statusMessage.textContent = "✓ Competition ready!";
+            statusMessage.style.color = "#00ff9d";
+            statusMessage.style.fontWeight = "bold";
+            
+            // Add success animation to keys
+            keys.forEach((key, index) => {
                 setTimeout(() => {
-                    window.location.href = redirectTo;
-                }, 1500);
-            }, 1000);
-        }
-
-        // Start progress simulation
-        setTimeout(updateProgress, 500);
-
-        // Check if page is already loaded
-        if (document.readyState === 'complete') {
-            currentProgress = 90;
-        }
-
-        // Listen for page load
-        window.addEventListener('load', () => {
-            currentProgress = Math.max(currentProgress, 85);
-        });
-
-        // Safety redirect in case something goes wrong (increased to 15 seconds)
-        setTimeout(() => {
-            if (currentProgress < 100) {
-                statusElement.textContent = "Taking longer than expected. Redirecting...";
-                window.location.href = '/';
-            }
-        }, 15000);
-
-        // Add some interactivity
-        document.querySelectorAll('.key').forEach(key => {
-            key.addEventListener('click', () => {
-                key.style.animation = 'none';
-                setTimeout(() => {
-                    key.style.animation = 'keyPress 3s infinite ease-in-out';
-                }, 10);
+                    simulateKeyPress(key, key.getAttribute('data-key'));
+                }, index * 100);
             });
+            
+            // Final animation and redirect
+            setTimeout(() => {
+                loaderContainer.classList.add('fade-out');
+                
+                // Redirect after fade out
+                setTimeout(() => {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const redirectTo = urlParams.get('redirect') || '/';
+                    window.location.href = redirectTo;
+                }, 800); // Faster redirect
+            }, 800);
+        }
+
+        // Safety timeout (6 seconds instead of 12)
+        setTimeout(() => {
+            if (!isCompleted) {
+                currentProgress = 100;
+                completeLoading();
+            }
+        }, 6000);
+
+        // Start when page loads
+        if (document.readyState === 'loading') {
+            window.addEventListener('DOMContentLoaded', init);
+        } else {
+            // Page already loaded, start immediately
+            init();
+        }
+
+        // Add keydown event for extra interactivity
+        document.addEventListener('keydown', (e) => {
+            if (!isCompleted) {
+                const keyChar = e.key.toUpperCase();
+                const keyElement = document.querySelector(`.key[data-key="${keyChar}"]`);
+                if (keyElement) {
+                    simulateKeyPress(keyElement, keyChar);
+                }
+            }
         });
     </script>
 </body>
