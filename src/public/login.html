@@ -99,33 +99,43 @@
   </style>
 </head>
 <body>
-  <div class="auth-container">
-    <div class="auth-card">
-      <h1 class="auth-title">Organizer Login</h1>
-      <p class="auth-subtitle">Sign in to manage your competitions</p>
-      
-      <div id="errorMessage" class="error-message"></div>
-      
-      <form id="loginForm">
-        <div class="form-group">
-          <label for="email">Email</label>
-          <input type="email" id="email" required autocomplete="email">
-        </div>
-        
-       <div class="form-group">
-  <label for="password">Password</label>
+<div class="auth-container">
+  <div class="auth-card">
+    <h1 class="auth-title">Organizer Login</h1>
+    <p class="auth-subtitle">Sign in to manage your competitions</p>
 
-  <div class="password-input">
-    <input
-      type="password"
-      id="password"
-      required
-      autocomplete="current-password"
-    />
-    <span class="eye-icon" id="togglePassword">👁️</span>
+    <div id="errorMessage" class="error-message"></div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input
+          type="email"
+          id="email"
+          required
+          autocomplete="email"
+          placeholder="Enter your email address"
+        >
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+
+        <div class="password-input">
+          <input
+            type="password"
+            id="password"
+            required
+            autocomplete="current-password"
+            placeholder="Enter your password"
+          />
+          <span class="eye-icon" id="togglePassword">👁️</span>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
-        
+
         <button type="submit" class="btn-primary" id="loginBtn">
           Login
         </button>
